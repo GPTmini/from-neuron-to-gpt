@@ -52,6 +52,7 @@ project:
             - file: tutorial/zh/large-language-model/03-pre-training/08-normalize.ipynb
             - file: tutorial/zh/large-language-model/03-pre-training/09-dropout.ipynb
             - file: tutorial/zh/large-language-model/03-pre-training/10-persistance.ipynb
+        - file: tutorial/zh/large-language-model/03-pre-training/pre-training-survey.md
         - title: 推理
           children:
             - file: tutorial/zh/large-language-model/04-inference/11-sampling.ipynb
