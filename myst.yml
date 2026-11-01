@@ -59,12 +59,14 @@ project:
             - file: tutorial/zh/large-language-model/04-inference/12-stopping-criteria.ipynb
             - file: tutorial/zh/large-language-model/04-inference/13-kv-cache.ipynb
             - file: tutorial/zh/large-language-model/04-inference/14-batch-inference.ipynb
+        - file: tutorial/zh/large-language-model/04-inference/inference-survey.md
         - title: 微调
           children:
             - file: tutorial/zh/large-language-model/05-fine-tuning/15-sft-sample.ipynb
             - file: tutorial/zh/large-language-model/05-fine-tuning/16-sft.ipynb
             - file: tutorial/zh/large-language-model/05-fine-tuning/17-dpo-sample.ipynb
             - file: tutorial/zh/large-language-model/05-fine-tuning/18-dpo.ipynb
+        - file: tutorial/zh/large-language-model/05-fine-tuning/fine-tuning-survey.md
 site:
   template: book-theme
   options:
