@@ -1,37 +1,105 @@
-name: Jupyter Book (via myst) GitHub Pages Deploy
+
+name: Deploy Bilingual Jupyter Book
+
 on:
   push:
     branches: [main]
-env:
-  BASE_URL: /${{ github.event.repository.name }}
+  workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
-  group: 'pages'
+  group: github-pages
   cancel-in-progress: false
+
 jobs:
-  deploy:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v6
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
-      - uses: actions/setup-node@v7
+      # 1. Checkout repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18.x
-      - name: Install Jupyter Book (via myst)
-        run: npm install -g jupyter-book
-      - name: Build HTML Assets
-        run: jupyter-book build --html
-      - name: Upload artifact
+          node-version: 24
+
+      # 3. Install MyST
+      - name: Install MyST
+        run: npm install -g mystmd
+
+      # 4. Build English book
+      - name: Build English
+        working-directory: en
+        env:
+          BASE_URL: /${{ github.event.repository.name }}/en
+        run: myst build --html
+
+      # 5. Build Chinese book
+      - name: Build Chinese
+        working-directory: zh
+        env:
+          BASE_URL: /${{ github.event.repository.name }}/zh
+        run: myst build --html
+
+      # 6. Merge both websites
+      - name: Prepare website
+        run: |
+          mkdir -p site/en site/zh
+
+          cp -r en/_build/html/. site/en/
+          cp -r zh/_build/html/. site/zh/
+
+          cat > site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>From Neuron to GPT</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                padding: 80px 20px;
+              }
+              a {
+                display: inline-block;
+                margin: 15px;
+                padding: 12px 28px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                text-decoration: none;
+                color: #333;
+              }
+            </style>
+          </head>
+          <body>
+            <h1>From Neuron to GPT</h1>
+            <p>From Artificial Neurons to Large Language Models</p>
+            <a href="./en/">English</a>
+            <a href="./zh/">简体中文</a>
+          </body>
+          </html>
+          EOF
+
+      # 7. Upload website
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './_build/html'
+          path: site
+
+      # 8. Deploy website
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
