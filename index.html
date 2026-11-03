@@ -1,301 +1,436 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="From Neuron to GPT — a practical, hands-on introduction to neural networks, deep learning, and large language models.">
-  <title>From Neuron to GPT</title>
+  <meta name="description" content="从零开始大模型：从单个神经元出发，只用 NumPy 一步步手搓出 GPT。">
+  <title>从零开始大模型</title>
   <style>
     :root {
-      --primary: #2980b9;
-      --primary-dark: #1f638f;
-      --text: #2c3e50;
-      --muted: #5b6875;
-      --border: #d8dee4;
-      --surface: #f7f9fb;
-      --surface-blue: #eef6fb;
-      --shadow: 0 3px 12px rgba(36, 52, 70, .07);
+      color-scheme: light;
+      --myst-primary: #2563a6;
+      --myst-primary-hover: #174f89;
+      --myst-text: #20242a;
+      --myst-muted: #667085;
+      --myst-border: #e2e5e9;
+      --myst-sidebar: #f8f9fa;
+      --myst-page: #ffffff;
+      --myst-link: #2563a6;
+      --myst-code-bg: #f5f6f8;
+      --header-height: 58px;
+      --sidebar-width: 276px;
+      --content-width: 850px;
     }
 
     * { box-sizing: border-box; }
-
     html { scroll-behavior: smooth; }
-
     body {
       margin: 0;
-      color: var(--text);
-      background: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                   "Helvetica Neue", Arial, sans-serif;
-      line-height: 1.65;
+      color: var(--myst-text);
+      background: var(--myst-page);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+                   "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
     }
-
-    a { color: var(--primary); text-decoration: none; }
-    a:hover { color: var(--primary-dark); text-decoration: underline; }
+    a { color: var(--myst-link); text-decoration: none; }
+    a:hover { color: var(--myst-primary-hover); text-decoration: underline; }
 
     .topbar {
-      height: 62px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      height: var(--header-height);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 clamp(20px, 5vw, 72px);
-      border-bottom: 1px solid var(--border);
-      background: rgba(255,255,255,.96);
+      padding: 0 24px;
+      background: rgba(255,255,255,.97);
+      border-bottom: 1px solid var(--myst-border);
+      backdrop-filter: blur(8px);
     }
-
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 11px;
-      color: var(--text);
+      gap: 10px;
+      color: var(--myst-text);
+      font-size: 15px;
       font-weight: 650;
-      letter-spacing: .01em;
+      white-space: nowrap;
     }
-
-    .brand:hover { text-decoration: none; }
-
+    .brand:hover { color: var(--myst-text); text-decoration: none; }
+    .brand img { width: 27px; height: 27px; object-fit: contain; }
     .brand-mark {
-      width: 30px;
-      height: 30px;
+      width: 27px;
+      height: 27px;
       display: grid;
       place-items: center;
-      color: #fff;
-      background: var(--primary);
-      border-radius: 6px;
-      font-size: 17px;
+      border-radius: 5px;
+      background: var(--myst-primary);
+      color: white;
+      font-size: 15px;
       font-weight: 700;
     }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      color: var(--myst-muted);
+      font-size: 13px;
+    }
+    .top-actions a { color: inherit; }
+    .menu-button {
+      display: none;
+      border: 1px solid var(--myst-border);
+      border-radius: 5px;
+      background: white;
+      color: var(--myst-text);
+      padding: 5px 9px;
+      font: inherit;
+      cursor: pointer;
+    }
 
-    .top-link {
-      color: var(--muted);
-      font-size: .92rem;
+    .layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+      min-height: calc(100vh - var(--header-height));
+    }
+    .sidebar {
+      position: sticky;
+      top: var(--header-height);
+      align-self: start;
+      height: calc(100vh - var(--header-height));
+      overflow-y: auto;
+      padding: 28px 20px 32px 26px;
+      background: var(--myst-sidebar);
+      border-right: 1px solid var(--myst-border);
+    }
+    .sidebar-label {
+      margin: 0 0 12px 10px;
+      color: #7b8490;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .side-link {
+      display: block;
+      margin: 2px 0;
+      padding: 6px 10px;
+      border-radius: 4px;
+      color: #4b5563;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .side-link:hover {
+      color: var(--myst-primary);
+      background: #edf2f7;
+      text-decoration: none;
+    }
+    .side-link.active {
+      color: var(--myst-primary);
+      background: #eaf1f8;
+      font-weight: 650;
+      box-shadow: inset 2px 0 0 var(--myst-primary);
+    }
+    .side-divider {
+      height: 1px;
+      margin: 20px 8px;
+      background: var(--myst-border);
+    }
+    .side-note {
+      margin: 0 10px;
+      color: #7b8490;
+      font-size: 12px;
+      line-height: 1.6;
     }
 
     main {
-      width: min(1040px, calc(100% - 40px));
+      width: min(100%, calc(var(--content-width) + 100px));
       margin: 0 auto;
+      padding: 54px 54px 72px;
     }
-
-    .hero {
-      padding: clamp(64px, 10vw, 112px) 0 56px;
-      text-align: center;
+    .breadcrumbs {
+      margin-bottom: 24px;
+      color: #87909b;
+      font-size: 13px;
     }
-
-    .eyebrow {
-      display: inline-block;
-      margin-bottom: 17px;
-      padding: 4px 12px;
-      color: var(--primary-dark);
-      background: var(--surface-blue);
-      border: 1px solid #d5e8f5;
-      border-radius: 4px;
-      font-size: .78rem;
-      font-weight: 650;
-      letter-spacing: .09em;
-      text-transform: uppercase;
-    }
-
+    .breadcrumbs span { margin: 0 7px; color: #b0b7bf; }
     h1 {
-      margin: 0;
-      color: #263746;
-      font-size: clamp(2.45rem, 6vw, 4.35rem);
+      margin: 0 0 8px;
+      color: #20242a;
+      font-size: clamp(2rem, 4vw, 2.65rem);
       font-weight: 650;
-      letter-spacing: -.045em;
-      line-height: 1.12;
+      letter-spacing: -.035em;
+      line-height: 1.25;
     }
-
-    .subtitle {
-      max-width: 720px;
-      margin: 22px auto 0;
-      color: var(--muted);
-      font-size: clamp(1.05rem, 2.2vw, 1.28rem);
+    .author {
+      margin: 10px 0 27px;
+      color: var(--myst-muted);
+      font-size: 14px;
     }
-
-    .intro {
-      max-width: 690px;
-      margin: 15px auto 0;
-      color: #6b7785;
-      font-size: .98rem;
+    .banner {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin: 22px 0 25px;
+      border: 1px solid var(--myst-border);
+      border-radius: 4px;
     }
+    .lead {
+      margin: 0 0 15px;
+      color: #343a40;
+      font-size: 1.12rem;
+      line-height: 1.85;
+    }
+    p { margin: 0 0 16px; }
+    .muted { color: var(--myst-muted); }
 
-    .section-heading {
-      margin: 0 0 20px;
-      color: #34495e;
-      font-size: 1.28rem;
+    .language-section {
+      margin: 36px 0 44px;
+      padding: 23px 25px 25px;
+      border: 1px solid var(--myst-border);
+      border-radius: 5px;
+      background: #fff;
+    }
+    .language-section h2 {
+      margin: 0 0 7px;
+      color: #252a31;
+      font-size: 1.35rem;
       font-weight: 650;
-      text-align: center;
     }
-
+    .section-intro {
+      margin-bottom: 19px;
+      color: var(--myst-muted);
+      font-size: 14px;
+    }
     .language-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 22px;
-      max-width: 790px;
-      margin: 0 auto;
+      gap: 16px;
     }
-
     .language-card {
       display: flex;
       flex-direction: column;
-      min-height: 218px;
-      padding: 27px 28px 24px;
-      color: var(--text);
+      min-height: 166px;
+      padding: 19px 20px 17px;
+      border: 1px solid #d9e0e7;
+      border-radius: 5px;
       background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      box-shadow: var(--shadow);
-      transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+      color: var(--myst-text);
+      transition: border-color .15s ease, background .15s ease;
     }
-
     .language-card:hover {
-      color: var(--text);
-      border-color: #9bc5df;
-      box-shadow: 0 7px 20px rgba(36, 52, 70, .11);
+      border-color: #8fb4d4;
+      background: #fbfdff;
       text-decoration: none;
-      transform: translateY(-2px);
     }
-
-    .language-label {
-      color: var(--primary);
-      font-size: .76rem;
+    .language-kicker {
+      color: var(--myst-primary);
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: .1em;
+      letter-spacing: .08em;
       text-transform: uppercase;
     }
-
     .language-title {
-      margin: 9px 0 7px;
-      color: #2c3e50;
-      font-size: 1.55rem;
+      margin: 5px 0 6px;
+      color: #252a31;
+      font-size: 1.2rem;
       font-weight: 650;
     }
-
     .language-description {
       margin: 0;
-      color: var(--muted);
-      font-size: .94rem;
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.65;
     }
-
-    .card-action {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .language-action {
       margin-top: auto;
-      padding-top: 22px;
-      color: var(--primary);
-      font-size: .93rem;
+      padding-top: 15px;
+      color: var(--myst-primary);
+      font-size: 13px;
       font-weight: 650;
     }
 
-    .arrow { font-size: 1.15rem; }
-
-    .about {
-      max-width: 790px;
-      margin: 66px auto 0;
-      padding: 27px 30px;
-      background: var(--surface);
-      border: 1px solid #e5e9ed;
-      border-left: 4px solid var(--primary);
-      border-radius: 4px;
+    h2.content-heading {
+      margin: 40px 0 14px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--myst-border);
+      color: #252a31;
+      font-size: 1.55rem;
+      font-weight: 650;
+      line-height: 1.4;
     }
-
-    .about h2 {
-      margin: 0 0 8px;
-      color: #34495e;
-      font-size: 1.12rem;
+    h3 {
+      margin: 27px 0 10px;
+      color: #303741;
+      font-size: 1.17rem;
+      font-weight: 650;
     }
-
-    .about p {
-      margin: 0;
-      color: var(--muted);
-      font-size: .95rem;
+    ul {
+      margin: 8px 0 20px;
+      padding-left: 25px;
     }
-
+    li { margin: 5px 0; }
+    .note {
+      margin: 24px 0;
+      padding: 13px 17px;
+      border-left: 3px solid #3b82b8;
+      border-radius: 3px;
+      background: #f1f6fa;
+      color: #44515e;
+      font-size: 14px;
+    }
+    code {
+      padding: .12em .35em;
+      border-radius: 3px;
+      background: var(--myst-code-bg);
+      color: #394454;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+    .repo-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 4px;
+      font-size: 14px;
+    }
     footer {
-      margin-top: 76px;
-      padding: 22px 20px 30px;
-      color: #7b8792;
-      border-top: 1px solid var(--border);
-      font-size: .84rem;
-      text-align: center;
+      margin-top: 55px;
+      padding-top: 20px;
+      border-top: 1px solid var(--myst-border);
+      color: #89919b;
+      font-size: 12px;
     }
 
-    @media (max-width: 620px) {
-      .topbar { height: 56px; }
-      .language-grid { grid-template-columns: 1fr; gap: 15px; }
-      .language-card { min-height: 190px; }
-      .about { margin-top: 48px; padding: 22px; }
-      footer { margin-top: 55px; }
+    @media (max-width: 850px) {
+      :root { --sidebar-width: 235px; }
+      main { padding: 42px 32px 60px; }
+      .sidebar { padding-left: 18px; }
     }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        scroll-behavior: auto !important;
-        transition-duration: .01ms !important;
+    @media (max-width: 680px) {
+      .topbar { padding: 0 16px; }
+      .menu-button { display: inline-block; }
+      .top-actions { gap: 12px; }
+      .layout { display: block; }
+      .sidebar {
+        display: none;
+        position: static;
+        width: 100%;
+        height: auto;
+        max-height: 60vh;
+        border-right: 0;
+        border-bottom: 1px solid var(--myst-border);
       }
+      .sidebar.open { display: block; }
+      main { padding: 32px 21px 48px; }
+      .language-grid { grid-template-columns: 1fr; }
+      .language-section { padding: 19px 17px; }
+      h1 { font-size: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
     }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="From Neuron to GPT home">
+    <a class="brand" href="./" aria-label="从零开始大模型首页">
       <span class="brand-mark" aria-hidden="true">N</span>
-      <span>From Neuron to GPT</span>
+      <span>从零开始大模型</span>
     </a>
-    <a class="top-link" href="#editions">Read the book</a>
+    <div class="top-actions">
+      <a href="https://github.com/gptmini/from-neuron-to-gpt" target="_blank" rel="noopener">GitHub ↗</a>
+      <button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar" onclick="const s=document.getElementById('sidebar');const open=s.classList.toggle('open');this.setAttribute('aria-expanded',String(open));">目录</button>
+    </div>
   </header>
 
-  <main>
-    <section class="hero" aria-labelledby="page-title">
-      <span class="eyebrow">An open learning resource</span>
-      <h1 id="page-title">From Neuron to GPT</h1>
-      <p class="subtitle">From Artificial Neurons to Large Language Models</p>
-      <p class="intro">
-        A hands-on journey through the ideas behind modern AI — building
-        understanding step by step, from simple neural networks to GPT.
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="页面导航">
+      <p class="sidebar-label">导航</p>
+      <a class="side-link active" href="#top">前言</a>
+      <a class="side-link" href="#editions">选择语言</a>
+      <a class="side-link" href="#features">教程特点</a>
+      <a class="side-link" href="#contents">教程内容</a>
+      <div class="side-divider"></div>
+      <p class="sidebar-label">教材版本</p>
+      <a class="side-link" href="./zh/">中文版</a>
+      <a class="side-link" href="./en/">English edition</a>
+      <div class="side-divider"></div>
+      <p class="side-note">从单个神经元出发，只用 NumPy 一步步手搓出 GPT。</p>
+    </aside>
+
+    <main id="top">
+      <div class="breadcrumbs">从零开始大模型 <span>/</span> 前言</div>
+
+      <h1>从零开始大模型</h1>
+      <p class="author">李晓光（Steven Li）</p>
+
+      <p class="lead">
+        一套从单个神经元出发，只用 NumPy 一步步手搓出 GPT 的教程。
       </p>
-    </section>
-
-    <section id="editions" aria-labelledby="edition-heading">
-      <h2 class="section-heading" id="edition-heading">Choose your language</h2>
-      <div class="language-grid">
-        <a class="language-card" href="./en/" lang="en">
-          <span class="language-label">English edition</span>
-          <span class="language-title">Read in English</span>
-          <p class="language-description">
-            Explore the book in English, with explanations and runnable
-            Jupyter Notebook examples.
-          </p>
-          <span class="card-action">Open the book <span class="arrow" aria-hidden="true">→</span></span>
-        </a>
-
-        <a class="language-card" href="./zh/" lang="zh-Hans">
-          <span class="language-label">中文版</span>
-          <span class="language-title">阅读中文版</span>
-          <p class="language-description">
-            从人工神经元出发，通过循序渐进的讲解和可运行的
-            Jupyter Notebook，理解大语言模型的核心原理。
-          </p>
-          <span class="card-action">开始阅读 <span class="arrow" aria-hidden="true">→</span></span>
-        </a>
-      </div>
-    </section>
-
-    <section class="about" aria-labelledby="about-heading">
-      <h2 id="about-heading">Learn by building</h2>
       <p>
-        This book focuses on clear explanations, small examples, and
-        implementation from the ground up. The goal is to make the journey
-        from the first neuron to a working language model approachable.
+        不依赖 PyTorch、TensorFlow 等深度学习框架：自动求导、网络层、优化器、
+        注意力、Transformer、训练、推理、微调，全部从零实现，并配有逐步讲解的
+        Jupyter Notebook。
       </p>
-    </section>
-  </main>
 
-  <footer>
-    <span>From Neuron to GPT</span>
-    <span aria-hidden="true"> · </span>
-    <span>An open educational project</span>
-  </footer>
+      <section class="language-section" id="editions">
+        <h2>选择阅读版本</h2>
+        <p class="section-intro">Choose your preferred language.</p>
+        <div class="language-grid">
+          <a class="language-card" href="./zh/" lang="zh-CN">
+            <span class="language-kicker">简体中文</span>
+            <span class="language-title">中文版</span>
+            <p class="language-description">
+              从神经网络基础到大语言模型，循序渐进理解 GPT 的核心原理与实现。
+            </p>
+            <span class="language-action">进入中文版 →</span>
+          </a>
+          <a class="language-card" href="./en/" lang="en">
+            <span class="language-kicker">English</span>
+            <span class="language-title">English edition</span>
+            <p class="language-description">
+              A step-by-step, hands-on guide from artificial neurons to large language models.
+            </p>
+            <span class="language-action">Open the English edition →</span>
+          </a>
+        </div>
+      </section>
+
+      <h2 class="content-heading" id="features">教程特点</h2>
+      <ul>
+        <li><strong>零框架依赖：</strong>只用 NumPy，从张量、计算图、反向传播开始，每一行代码都能读懂。</li>
+        <li><strong>循序渐进：</strong>从一个神经元，到 GPT、监督微调（SFT）和直接偏好优化（DPO），每章只引入少量新概念。</li>
+        <li><strong>讲解与代码同在：</strong>每章都是一个可以独立运行的 Notebook，多数章节末尾附有课后练习。</li>
+        <li><strong>纯 CPU 运行：</strong>不需要 GPU，使用较小模型观察训练、推理和微调的完整过程。</li>
+      </ul>
+
+      <h2 class="content-heading" id="contents">教程内容</h2>
+      <h3>第一部分：神经网络基础</h3>
+      <p>从线性回归、多层感知机和反向传播开始，逐步实现网络层、损失函数、优化器，并学习循环神经网络。</p>
+      <h3>第二部分：大语言模型基础</h3>
+      <p>从词元嵌入和注意力机制出发，逐步构建 Transformer / GPT，进一步学习预训练、推理、监督微调和直接偏好优化。</p>
+
+      <div class="note">
+        教程代码基于 Python 和 NumPy。建议按 Notebook 编号顺序阅读，并在本地运行示例代码。
+      </div>
+
+      <p class="repo-link">
+        <a href="https://github.com/gptmini/from-neuron-to-gpt" target="_blank" rel="noopener">
+          查看 GitHub 代码仓库 ↗
+        </a>
+      </p>
+
+      <footer>
+        从零开始大模型 · From Neuron to GPT
+        <br>
+        一个从人工神经元到大语言模型的开源学习项目。
+      </footer>
+    </main>
+  </div>
 </body>
 </html>
