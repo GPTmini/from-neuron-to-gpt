@@ -1,5 +1,5 @@
 
-name: Deploy Bilingual Jupyter Book
+name: Jupyter Book Bilingual GitHub Pages Deploy
 
 on:
   push:
@@ -12,47 +12,50 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
+  deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
+    runs-on: ubuntu-latest
+
     steps:
-      # 1. Checkout repository
-      - name: Checkout
-        uses: actions/checkout@v4
+      # 1. Checkout
+      - uses: actions/checkout@v6
 
-      # 2. Setup Node.js
+      # 2. Setup Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      # 3. Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 18.x
 
-      # 3. Install MyST
-      - name: Install MyST
-        run: npm install -g mystmd
+      # 4. Install Jupyter Book 2
+      - name: Install Jupyter Book
+        run: npm install -g jupyter-book
 
-      # 4. Build English book
+      # 5. Build English edition
       - name: Build English
         working-directory: en
         env:
           BASE_URL: /${{ github.event.repository.name }}/en
-        run: myst build --html
+        run: jupyter-book build --html
 
-      # 5. Build Chinese book
+      # 6. Build Chinese edition
       - name: Build Chinese
         working-directory: zh
         env:
           BASE_URL: /${{ github.event.repository.name }}/zh
-        run: myst build --html
+        run: jupyter-book build --html
 
-      # 6. Merge both websites
+      # 7. Merge both editions
       - name: Prepare website
         run: |
           mkdir -p site/en site/zh
@@ -67,39 +70,23 @@ jobs:
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>From Neuron to GPT</title>
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                text-align: center;
-                padding: 80px 20px;
-              }
-              a {
-                display: inline-block;
-                margin: 15px;
-                padding: 12px 28px;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                text-decoration: none;
-                color: #333;
-              }
-            </style>
           </head>
           <body>
             <h1>From Neuron to GPT</h1>
             <p>From Artificial Neurons to Large Language Models</p>
-            <a href="./en/">English</a>
-            <a href="./zh/">简体中文</a>
+            <p><a href="./en/">English Edition</a></p>
+            <p><a href="./zh/">中文版</a></p>
           </body>
           </html>
           EOF
 
-      # 7. Upload website
-      - name: Upload Pages Artifact
+      # 8. Upload artifact
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
-      # 8. Deploy website
+      # 9. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
