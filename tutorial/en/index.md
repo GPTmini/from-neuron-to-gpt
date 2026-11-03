@@ -69,7 +69,7 @@ pip install jupyterlab
 
 ### 运行教程
 
-按编号顺序打开 `tutorial/zh` 下的 Notebook 即可。
+按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版） 下的 Notebook 即可。
 
 ### 用命令行运行完整流程
 
@@ -83,17 +83,17 @@ python -m src.dpo.dpo   # 直接偏好优化：准备 DPO 样本、训练、生�
 
 三个阶段有依赖关系，必须**按顺序**运行：
 
-| 阶段     | 依赖                          | 产出（均在 `data/` 目录）                           |
-|--------|-----------------------------|---------------------------------------------|
-| 预训练    | `tinyshakespeare.txt`       | `tinyshakespeare-gpt.npz`                   |
-| SFT    | 预训练模型                       | `sft-samples.pkl`、`tinyshakespeare-sft.npz` |
-| DPO    | SFT 模型，数据准备阶段还会用预训练模型生成拒绝样本 | `dpo-samples.pkl`、`tinyshakespeare-dpo.npz` |
+| 阶段     | 依赖                                | 产出（均在 `data/` 目录）                           |
+|--------|-----------------------------------|---------------------------------------------|
+| 预训练    | `tinyshakespeare.txt`             | `tinyshakespeare-gpt.npz`                   |
+| SFT    | 预训练模型                             | `sft-samples.pkl`、`tinyshakespeare-sft.npz` |
+| DPO    | 预训练模型、SFT 模型 | `dpo-samples.pkl`、`tinyshakespeare-dpo.npz` |
 
-Notebook 里的第二部分同样遵循这个顺序：`03-pre-training/10` 生成预训练模型，`05-fine-tuning` 依次使用它。
+`03-pre-training/10` 生成预训练模型，`04-inference` 和 `05-fine-tuning` 依次使用它。
 
 ## 模型规模
 
-默认的 GPT 模型配置如下（对应第二部分“模型持久化”章节，以及 `src/gpt/gpt.py`）：
+默认的 GPT 模型配置如下（对应第二部分“模型持久化”章节 `03-pre-training/10`，以及 `src/gpt/gpt.py`）：
 
 | 参数              |               值 |
 |-----------------|----------------:|
@@ -106,7 +106,7 @@ Notebook 里的第二部分同样遵循这个顺序：`03-pre-training/10` 生�
 | 词表（字符级）         |              65 |
 | 参数量             | 约 1080 万（10.8M） |
 
-此前的章节为了方便快速运行，使用的是更小的配置；到“模型持久化”章节才换成上表的配置，目的是训练一个在推理和微调阶段可用的模型。模型完全在 CPU 上训练，规模较小，目的是看清每一步的原理，而不是追求生成质量。
+`03-pre-training/10` 之前的章节为了方便快速运行，使用的是更小的配置；到“模型持久化”章节才换成上表的配置，目的是训练一个在推理和微调阶段可用的模型。模型完全在 CPU 上训练，规模较小，目的是看清每一步的原理，而不是追求生成质量。
 
 ### 运行环境与耗时
 
