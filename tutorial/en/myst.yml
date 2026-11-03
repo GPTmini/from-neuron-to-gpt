@@ -15,58 +15,58 @@ project:
       children:
         - title: 多层神经网络
           children:
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/01-linear-regression.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/02-mse-loss.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/03-gradient-descent.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/04-autograd.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/05-learning-rate.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/06-iteration.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/07-batch.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/08-epoch.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/09-hidden-layer.ipynb
-            - file: tutorial/en/artificial-neural-network/01-multilayer-perceptron/10-activation-functions.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/01-linear-regression.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/02-mse-loss.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/03-gradient-descent.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/04-autograd.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/05-learning-rate.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/06-iteration.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/07-batch.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/08-epoch.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/09-hidden-layer.ipynb
+            - file: artificial-neural-network/01-multilayer-perceptron/10-activation-functions.ipynb
         - title: 循环神经网络
           children:
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/11-encoding.ipynb
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/12-embedding.ipynb
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/13-cross-entropy-loss.ipynb
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/14-recurrent.ipynb
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/15-adam-optimizer.ipynb
-            - file: tutorial/en/artificial-neural-network/02-recurrent-neural-network/16-learning-rate-scheduler.ipynb
-        - file: tutorial/en/artificial-neural-network/03-core-framework.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/11-encoding.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/12-embedding.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/13-cross-entropy-loss.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/14-recurrent.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/15-adam-optimizer.ipynb
+            - file: artificial-neural-network/02-recurrent-neural-network/16-learning-rate-scheduler.ipynb
+        - file: artificial-neural-network/03-core-framework.ipynb
     - title: 大语言模型基础
       children:
         - title: 编码器
           children:
-            - file: tutorial/en/large-language-model/01-tokenizer/01-token-embedding.ipynb
-            - file: tutorial/en/large-language-model/01-tokenizer/02-position-embedding.ipynb
+            - file: large-language-model/01-tokenizer/01-token-embedding.ipynb
+            - file: large-language-model/01-tokenizer/02-position-embedding.ipynb
         - title: 自注意力机制
           children:
-            - file: tutorial/en/large-language-model/02-attention/03-self-attention.ipynb
-            - file: tutorial/en/large-language-model/02-attention/04-causal-attention.ipynb
-            - file: tutorial/en/large-language-model/02-attention/05-weighted-attention.ipynb
-            - file: tutorial/en/large-language-model/02-attention/06-multihead-attention.ipynb
+            - file: large-language-model/02-attention/03-self-attention.ipynb
+            - file: large-language-model/02-attention/04-causal-attention.ipynb
+            - file: large-language-model/02-attention/05-weighted-attention.ipynb
+            - file: large-language-model/02-attention/06-multihead-attention.ipynb
         - title: 预训练
           children:
-            - file: tutorial/en/large-language-model/03-pre-training/07-shortcut-connect.ipynb
-            - file: tutorial/en/large-language-model/03-pre-training/08-normalize.ipynb
-            - file: tutorial/en/large-language-model/03-pre-training/09-dropout.ipynb
-            - file: tutorial/en/large-language-model/03-pre-training/10-persistance.ipynb
-        - file: tutorial/en/large-language-model/03-pre-training/pre-training-survey.md
+            - file: large-language-model/03-pre-training/07-shortcut-connect.ipynb
+            - file: large-language-model/03-pre-training/08-normalize.ipynb
+            - file: large-language-model/03-pre-training/09-dropout.ipynb
+            - file: large-language-model/03-pre-training/10-persistance.ipynb
+        - file: large-language-model/03-pre-training/pre-training-survey.md
         - title: 推理
           children:
-            - file: tutorial/en/large-language-model/04-inference/11-sampling.ipynb
-            - file: tutorial/en/large-language-model/04-inference/12-stopping-criteria.ipynb
-            - file: tutorial/en/large-language-model/04-inference/13-kv-cache.ipynb
-            - file: tutorial/en/large-language-model/04-inference/14-batch-inference.ipynb
-        - file: tutorial/en/large-language-model/04-inference/inference-survey.md
+            - file: large-language-model/04-inference/11-sampling.ipynb
+            - file: large-language-model/04-inference/12-stopping-criteria.ipynb
+            - file: large-language-model/04-inference/13-kv-cache.ipynb
+            - file: large-language-model/04-inference/14-batch-inference.ipynb
+        - file: large-language-model/04-inference/inference-survey.md
         - title: 微调
           children:
-            - file: tutorial/en/large-language-model/05-fine-tuning/15-sft-sample.ipynb
-            - file: tutorial/en/large-language-model/05-fine-tuning/16-sft.ipynb
-            - file: tutorial/en/large-language-model/05-fine-tuning/17-dpo-sample.ipynb
-            - file: tutorial/en/large-language-model/05-fine-tuning/18-dpo.ipynb
-        - file: tutorial/en/large-language-model/05-fine-tuning/fine-tuning-survey.md
+            - file: large-language-model/05-fine-tuning/15-sft-sample.ipynb
+            - file: large-language-model/05-fine-tuning/16-sft.ipynb
+            - file: large-language-model/05-fine-tuning/17-dpo-sample.ipynb
+            - file: large-language-model/05-fine-tuning/18-dpo.ipynb
+        - file: large-language-model/05-fine-tuning/fine-tuning-survey.md
 site:
   template: book-theme
   options:
