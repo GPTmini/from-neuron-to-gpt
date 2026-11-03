@@ -59,26 +59,15 @@ jobs:
       - name: Prepare website
         run: |
           mkdir -p site/en site/zh
-
+            
+          # Copy English edition
           cp -r tutorial/en/_build/html/. site/en/
+            
+          # Copy Chinese edition
           cp -r tutorial/zh/_build/html/. site/zh/
-
-          cat > site/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>From Neuron to GPT</title>
-          </head>
-          <body>
-            <h1>From Neuron to GPT</h1>
-            <p>From Artificial Neurons to Large Language Models</p>
-            <p><a href="./en/">English Edition</a></p>
-            <p><a href="./zh/">中文版</a></p>
-          </body>
-          </html>
-          EOF
+            
+          # Copy root homepage
+          cp index.html site/index.html
 
       # 8. Upload artifact
       - name: Upload artifact
