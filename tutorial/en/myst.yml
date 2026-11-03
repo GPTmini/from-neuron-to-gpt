@@ -10,7 +10,7 @@ project:
   # keywords: []
   github: https://github.com/gptmini/from-neuron-to-gpt
   toc:
-    - file: tutorial/en/index.md
+    - file: index.md
     - title: 神经网络基础
       children:
         - title: 多层神经网络
