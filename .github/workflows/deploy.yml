@@ -43,14 +43,14 @@ jobs:
 
       # 5. Build English edition
       - name: Build English
-        working-directory: en
+        working-directory: tutorial/en
         env:
           BASE_URL: /${{ github.event.repository.name }}/en
         run: jupyter-book build --html
 
       # 6. Build Chinese edition
       - name: Build Chinese
-        working-directory: zh
+        working-directory: tutorial/zh
         env:
           BASE_URL: /${{ github.event.repository.name }}/zh
         run: jupyter-book build --html
@@ -60,8 +60,8 @@ jobs:
         run: |
           mkdir -p site/en site/zh
 
-          cp -r en/_build/html/. site/en/
-          cp -r zh/_build/html/. site/zh/
+          cp -r tutorial/en/_build/html/. site/en/
+          cp -r tutorial/zh/_build/html/. site/zh/
 
           cat > site/index.html <<'EOF'
           <!DOCTYPE html>
