@@ -1,7 +1,7 @@
 version: 1
 project:
   id: 2ff361ef-200a-4e6a-be05-725c77a3866d
-  title: 从零开始大模型
+  title: From Neuron to GPT
   authors:
     - name: 李晓光（Steven Li）
       # orcid: https://orcid.org/0000-0002-8713-2343
@@ -11,9 +11,9 @@ project:
   github: https://github.com/gptmini/from-neuron-to-gpt
   toc:
     - file: index.md
-    - title: 神经网络基础
+    - title: Fundamentals of Neural Networks
       children:
-        - title: 多层神经网络
+        - title: Multilayer Neural Networks
           children:
             - file: artificial-neural-network/01-multilayer-perceptron/01-linear-regression.ipynb
             - file: artificial-neural-network/01-multilayer-perceptron/02-mse-loss.ipynb
@@ -25,7 +25,7 @@ project:
             - file: artificial-neural-network/01-multilayer-perceptron/08-epoch.ipynb
             - file: artificial-neural-network/01-multilayer-perceptron/09-hidden-layer.ipynb
             - file: artificial-neural-network/01-multilayer-perceptron/10-activation-functions.ipynb
-        - title: 循环神经网络
+        - title: Recurrent Neural Networks
           children:
             - file: artificial-neural-network/02-recurrent-neural-network/11-encoding.ipynb
             - file: artificial-neural-network/02-recurrent-neural-network/12-embedding.ipynb
@@ -34,33 +34,33 @@ project:
             - file: artificial-neural-network/02-recurrent-neural-network/15-adam-optimizer.ipynb
             - file: artificial-neural-network/02-recurrent-neural-network/16-learning-rate-scheduler.ipynb
         - file: artificial-neural-network/03-core-framework.ipynb
-    - title: 大语言模型基础
+    - title: Fundamentals of Large Language Models
       children:
-        - title: 编码器
+        - title: Tokenizer
           children:
             - file: large-language-model/01-tokenizer/01-token-embedding.ipynb
             - file: large-language-model/01-tokenizer/02-position-embedding.ipynb
-        - title: 自注意力机制
+        - title: Self-attention Mechanisms
           children:
             - file: large-language-model/02-attention/03-self-attention.ipynb
             - file: large-language-model/02-attention/04-causal-attention.ipynb
             - file: large-language-model/02-attention/05-weighted-attention.ipynb
             - file: large-language-model/02-attention/06-multihead-attention.ipynb
-        - title: 预训练
+        - title: Pre-training
           children:
             - file: large-language-model/03-pre-training/07-shortcut-connect.ipynb
             - file: large-language-model/03-pre-training/08-normalize.ipynb
             - file: large-language-model/03-pre-training/09-dropout.ipynb
             - file: large-language-model/03-pre-training/10-persistance.ipynb
         - file: large-language-model/03-pre-training/pre-training-survey.md
-        - title: 推理
+        - title: Inference
           children:
             - file: large-language-model/04-inference/11-sampling.ipynb
             - file: large-language-model/04-inference/12-stopping-criteria.ipynb
             - file: large-language-model/04-inference/13-kv-cache.ipynb
             - file: large-language-model/04-inference/14-batch-inference.ipynb
         - file: large-language-model/04-inference/inference-survey.md
-        - title: 微调
+        - title: Fine-tuning
           children:
             - file: large-language-model/05-fine-tuning/15-sft-sample.ipynb
             - file: large-language-model/05-fine-tuning/16-sft.ipynb
