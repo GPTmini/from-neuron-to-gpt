@@ -64,6 +64,8 @@ jobs:
             
           # Copy root homepage
           cp index.html site/index.html
+          cp favicon.ico site/favicon.ico
+          cp logo.png site/logo.png
 
       # 8. Upload artifact
       - name: Upload artifact
