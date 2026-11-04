@@ -1,55 +1,55 @@
-# 前言
+# Preface
 
-![banner.png](banner.png)
+![From Neuron to GPT: building a GPT by hand with NumPy](banner.png)
 
-一套从单个神经元出发，只用 NumPy 一步步手搓出 GPT 的中文教程。
+A tutorial that starts from a single neuron and builds a GPT by hand, step by step, using nothing but NumPy. It is available in Chinese and English.
 
-不依赖 PyTorch、TensorFlow 等深度学习框架：自动求导、网络层、优化器、注意力、Transformer、训练、推理、微调，全部从零实现，并配有逐步讲解的 Jupyter Notebook。
+It uses no deep learning framework such as PyTorch or TensorFlow. Automatic differentiation, network layers, optimizers, attention, the Transformer, training, inference, and fine-tuning are all implemented from scratch, and each is explained step by step in a Jupyter Notebook.
 
-* 代码仓库：[https://github.com/gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
-* 许可证：[MIT License](LICENSE)
+* Code repository: [gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
+* License: [MIT License](../../LICENSE)
 
-## 特点
+## Features
 
-* **零框架依赖**：只用 NumPy，从张量、计算图、反向传播开始，每一行代码都能读懂；
-* **循序渐进**：从 1 个神经元，到 GPT、监督微调（SFT）和直接偏好优化（DPO），每章只引入少量新概念；
-* **讲解与代码同在**：每章都是一个可以独立运行的 Notebook，多数章节末尾附有课后练习；
-* **纯 CPU 运行**：不需要 GPU，默认的 GPT 模型约 10.8M 参数，一台笔记本即可完成训练。
+* **No framework dependencies**: only NumPy. We start from tensors, computational graphs, and backpropagation, so you can understand every line of code;
+* **Step by step**: from a single neuron to GPT, supervised fine-tuning (SFT), and direct preference optimization (DPO), with only a few new concepts per chapter;
+* **Explanations alongside code**: each chapter is a self-contained, runnable notebook, and most chapters end with exercises;
+* **CPU only**: no GPU required. The default GPT model has about 10.8M parameters and can be trained on a laptop.
 
-## 教程目录
+## Table of contents
 
-教程分为两部分，共 34 章，外加一篇框架总结。**两部分的章节编号各自独立**：第一部分是 01–16，第二部分是 01–18。
+The tutorial has two parts with 34 chapters in total, plus one framework summary. **Chapter numbers in the two parts are independent**: Part 1 uses 01–16 and Part 2 uses 01–18.
 
-### 第一部分：神经网络基础
+### Part 1: Neural network fundamentals
 
-目录：`tutorial/zh/artificial-neural-network`
+Directory: `artificial-neural-network`, under `tutorial/zh` (Chinese) and `tutorial/en` (English).
 
-| 目录                          | 章节    | 内容                                              |
-|-----------------------------|-------|-------------------------------------------------|
-| `01-multilayer-perceptron`  | 01–10 | 线性回归、损失函数、梯度下降、自动微分、学习率、迭代、批次、轮次、隐藏层、激活函数 |
-| `02-recurrent-neural-network` | 11–16 | 编码、嵌入、交叉熵损失、循环网络、Adam 优化器、学习率调度器                |
-| `03-core-framework`         | 总结    | 汇总前两部分，形成完整的核心深度学习框架（`src/core`）                |
+| Directory                     | Chapters | Contents                                                                                                                                         |
+|-------------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `01-multilayer-perceptron`    | 01–10    | Linear regression, loss function, gradient descent, automatic differentiation, learning rate, iteration, batch, epoch, hidden layer, activation function |
+| `02-recurrent-neural-network` | 11–16    | Encoding, embedding, cross-entropy loss, recurrent neural network, Adam optimizer, learning rate scheduler                                       |
+| `03-core-framework`           | Summary  | Consolidates the previous 16 chapters into a complete core deep learning framework (`src/core`)                                                  |
 
-### 第二部分：大语言模型基础
+### Part 2: Large language model fundamentals
 
-目录：`tutorial/zh/large-language-model`
+Directory: `large-language-model`, under `tutorial/zh` (Chinese) and `tutorial/en` (English).
 
-| 目录                | 章节    | 内容                                  |
-|-------------------|-------|-------------------------------------|
-| `01-tokenizer`    | 01–02 | 词元嵌入、位置嵌入                           |
-| `02-attention`    | 03–06 | 自注意力、因果注意力、加权注意力、多头注意力              |
-| `03-pre-training` | 07–10 | 残差连接、归一化、随机失活、模型持久化                 |
-| `04-inference`    | 11–14 | 采样策略（温度、Top-k、Top-p）、停止条件、KV 缓存、批量推理 |
-| `05-fine-tuning`  | 15–18 | SFT 数据准备与训练、DPO 数据准备与训练             |
+| Directory         | Chapters | Contents                                                                                    |
+|-------------------|----------|---------------------------------------------------------------------------------------------|
+| `01-tokenizer`    | 01–02    | Token embedding, position embedding                                                         |
+| `02-attention`    | 03–06    | Self-attention, causal attention, weighted attention, multi-head attention                  |
+| `03-pre-training` | 07–10    | Residual connection, normalization, dropout, model persistence                              |
+| `04-inference`    | 11–14    | Sampling strategies (temperature, top-k, top-p), stopping criteria, KV cache, batch inference |
+| `05-fine-tuning`  | 15–18    | SFT data preparation and training, DPO data preparation and training                        |
 
-## 快速开始
+## Quick start
 
-### 环境要求
+### Requirements
 
-* Python 3.10 及以上
-* 依赖：`numpy`、`matplotlib`、`requests`、`jupyter-book`
+* Python 3.10 or later
+* Dependencies: `numpy`, `matplotlib`, `requests`, `jupyter-book`
 
-### 安装
+### Installation
 
 ```bash
 git clone https://github.com/gptmini/from-neuron-to-gpt.git
@@ -63,99 +63,89 @@ pip install -r requirements.txt
 pip install jupyterlab
 ```
 
-### 数据
+### Data
 
-教程使用莎士比亚剧本 tinyshakespeare 作为训练数据，保存位置是 `data/tinyshakespeare.txt`。
+The tutorial uses tinyshakespeare, a collection of Shakespeare's plays, as training data. It is stored at `data/tinyshakespeare.txt`.
 
-### 运行教程
+### Running the tutorial
 
-按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版） 下的 Notebook 即可。
+Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order. If Python cannot find the `src` module, see the FAQ at the end of this page.
 
-### 用命令行运行完整流程
+### Running the full pipeline from the command line
 
-如果只想训练出模型，不想逐章阅读，可以在项目根目录依次运行三个脚本：
+If you only want to train the models and don't want to read the chapters, run the three scripts in order from the project root:
 
 ```bash
-python -m src.gpt.gpt   # 预训练：下载数据、训练 GPT、生成示例文本
-python -m src.sft.sft   # 监督微调：准备 SFT 样本、训练、生成示例文本
-python -m src.dpo.dpo   # 直接偏好优化：准备 DPO 样本、训练、生成示例文本
+python -m src.gpt.gpt   # Pre-training: download the data, train the GPT, generate sample text
+python -m src.sft.sft   # Supervised fine-tuning: prepare SFT samples, train, generate sample text
+python -m src.dpo.dpo   # Direct preference optimization: prepare DPO samples, train, generate sample text
 ```
 
-三个阶段有依赖关系，必须**按顺序**运行：
+The three stages depend on each other, so run them **in order**:
 
-| 阶段     | 依赖                                | 产出（均在 `data/` 目录）                           |
-|--------|-----------------------------------|---------------------------------------------|
-| 预训练    | `tinyshakespeare.txt`             | `tinyshakespeare-gpt.npz`                   |
-| SFT    | 预训练模型                             | `sft-samples.pkl`、`tinyshakespeare-sft.npz` |
-| DPO    | 预训练模型、SFT 模型 | `dpo-samples.pkl`、`tinyshakespeare-dpo.npz` |
+| Stage        | Depends on                | Output (all in `data/`)                               |
+|--------------|---------------------------|-------------------------------------------------------|
+| Pre-training | `tinyshakespeare.txt`     | `tinyshakespeare-gpt.npz`                             |
+| SFT          | Pre-trained model         | `sft-samples.pkl`, `tinyshakespeare-sft.npz`          |
+| DPO          | Pre-trained model, SFT model | `dpo-samples.pkl`, `tinyshakespeare-dpo.npz`       |
 
-`03-pre-training/10` 生成预训练模型，`04-inference` 和 `05-fine-tuning` 依次使用它。
+`03-pre-training/10` produces the pre-trained model, which `04-inference` and `05-fine-tuning` then use in turn.
 
-## 模型规模
+## Model size
 
-默认的 GPT 模型配置如下（对应第二部分“模型持久化”章节 `03-pre-training/10`，以及 `src/gpt/gpt.py`）：
+The default GPT configuration is as follows. It corresponds to the Part 2 chapter “Model Persistence” (`03-pre-training/10`) and to `src/gpt/gpt.py`:
 
-| 参数              |               值 |
-|-----------------|----------------:|
-| 上下文尺寸           |             256 |
-| 嵌入尺寸            |             384 |
-| 注意力头数           |               6 |
-| Transformer 模块数 |               6 |
-| 批大小             |              16 |
-| 训练轮次            |              10 |
-| 词表（字符级）         |              65 |
-| 参数量             | 约 1080 万（10.8M） |
+| Parameter                  |          Value |
+|----------------------------|---------------:|
+| Context size               |            256 |
+| Embedding size             |            384 |
+| Attention heads            |              6 |
+| Transformer blocks         |              6 |
+| Batch size                 |             16 |
+| Epochs                     |             10 |
+| Vocabulary (character-level) |           65 |
+| Parameters                 | about 10.8M    |
 
-`03-pre-training/10` 之前的章节为了方便快速运行，使用的是更小的配置；到“模型持久化”章节才换成上表的配置，目的是训练一个在推理和微调阶段可用的模型。模型完全在 CPU 上训练，规模较小，目的是看清每一步的原理，而不是追求生成质量。
+The chapters before `03-pre-training/10` use smaller configurations so that they run quickly. The “Model Persistence” chapter switches to the configuration above, in order to train a model that is usable for inference and fine-tuning. The model is trained entirely on the CPU and is small. The goal is to see the principle behind every step clearly, not to maximize generation quality.
 
-### 运行环境与耗时
+### Environment and running time
 
-全部代码基于 Mac mini M4 / 16GB 开发完成，完全运行在 CPU 上。
+All the code was developed on a Mac mini M4 with 16 GB of memory and runs entirely on the CPU.
 
-* 预训练（默认配置）：约 1–2 小时；
-* 微调阶段中，DPO 的数据准备需要逐条采样生成拒绝样本，通常是耗时最长的一步。
+* Pre-training (default configuration): about 1 to 2 hours;
+* In fine-tuning, DPO data preparation generates the rejected samples one by one, which is usually the slowest step.
 
-耗时与 CPU 性能、核数以及 NumPy 所链接的 BLAS 库有关，不同机器上的差别可能很大。
+Running time depends on the CPU, the number of cores, and the BLAS library that NumPy is linked against, and it can differ greatly between machines.
 
-## 项目结构
+## Project structure
 
 ```text
 .
-├── data/                       # 训练数据（tinyshakespeare）及训练产生的模型参数、样本文件
+├── data/                       # Training data (tinyshakespeare) plus the model parameters and samples produced by training
 ├── src/
-│   ├── core/                   # 核心框架：张量、网络层、激活函数、损失函数、优化器、
-│   │                           #         学习率调度器、数据集、训练器
-│   ├── gpt/                    # GPT 模型、数据集、损失函数、训练器；gpt.py 为预训练脚本
-│   ├── sft/                    # 监督微调；sft.py 为微调脚本
-│   └── dpo/                    # 直接偏好优化；dpo.py 为优化脚本
-├── tutorial/zh/                # 中文教程（Jupyter Notebook）
-│   ├── artificial-neural-network/
-│   └── large-language-model/
-├── myst.yml                    # 教程站点（MyST / Jupyter Book）配置
+│   ├── core/                   # Core framework: tensors, layers, activation functions, loss functions, optimizers,
+│   │                           #         learning rate schedulers, datasets, trainers
+│   ├── gpt/                    # GPT model, dataset, loss function, trainer; gpt.py is the pre-training script
+│   ├── sft/                    # Supervised fine-tuning; sft.py is the fine-tuning script
+│   └── dpo/                    # Direct preference optimization; dpo.py is the optimization script
+├── tutorial/
+│   ├── en/                     # English tutorial (Jupyter Notebooks)
+│   │   ├── artificial-neural-network/
+│   │   └── large-language-model/
+│   └── zh/                     # Chinese tutorial, same structure as en
+├── myst.yml                    # Site configuration (MyST / Jupyter Book)
 ├── requirements.txt
 └── LICENSE
 ```
 
-## 常见问题
+## Acknowledgments and references
 
-**`ModuleNotFoundError: No module named 'src'`**
-没有把项目根目录加入 `PYTHONPATH`，或者设置之后没有重启 Jupyter。请按“运行教程”一节设置，并在**同一个终端**里启动 `jupyter lab`。
+The training data, tinyshakespeare, comes from Andrej Karpathy's [char-rnn](https://github.com/karpathy/char-rnn) project.
 
-**`FileNotFoundError: ... tinyshakespeare.txt`**
-数据文件还没有准备好。请参考“准备数据”一节。
+Main references:
 
-**运行很慢**
-所有代码都是纯 NumPy 实现并运行在 CPU 上，这是预期行为。可以先把轮次、批大小或模型规模调小，确认流程跑通后再使用默认配置。
-
-## 致谢与参考
-
-* 训练数据 tinyshakespeare 来自 Andrej Karpathy 的 [char-rnn](https://github.com/karpathy/char-rnn) 项目；
-* Vaswani 等，*Attention Is All You Need*，2017；
-* Radford 等，*Language Models are Unsupervised Multitask Learners*（GPT-2），2019；
-* Kingma 和 Ba，*Adam: A Method for Stochastic Optimization*，2014；
-* Loshchilov 和 Hutter，*Decoupled Weight Decay Regularization*（AdamW），2017；
-* Rafailov 等，*Direct Preference Optimization: Your Language Model is Secretly a Reward Model*，2023。
-
-## 许可证
-
-本项目基于 [MIT License](LICENSE) 开源。
+* Vaswani et al., *Attention Is All You Need*, 2017.
+* Radford et al., *Language Models are Unsupervised Multitask Learners* (GPT-2), 2019.
+* Kingma and Ba, *Adam: A Method for Stochastic Optimization*, 2014.
+* Loshchilov and Hutter, *Decoupled Weight Decay Regularization* (AdamW), 2017.
+* Rafailov et al., *Direct Preference Optimization: Your Language Model is Secretly a Reward Model*, 2023.
