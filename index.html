@@ -79,6 +79,8 @@
         }
         .skip-link:focus { top: 10px; color: #fff; text-decoration: none; }
 
+        .logo { height: 107px; width: 454px; }
+
         /* ---- Article column ---- */
         main {
           width: min(768px, calc(100% - 40px));
@@ -196,6 +198,7 @@
           main { padding-top: 32px; }
           .card-grid { grid-template-columns: 1fr; gap: 14px; }
           .anchor { opacity: 1; }
+          .logo { height: 75%; width: 75%; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -209,7 +212,7 @@
 
 <main id="article">
     <article>
-        <img height="107" src="logo.png" width="454"/>
+        <img class="logo" src="logo.png" alt="From Neuron to GPT · 从零开始大模型"/>
 
         <p class="lead" style="text-align: justify">
             A hands-on journey through the ideas behind modern AI, building understanding step by step, from simple neural networks to GPT.
