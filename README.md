@@ -8,7 +8,7 @@ A tutorial that starts from a single neuron and builds a GPT by hand, step by st
 It uses no deep learning framework such as PyTorch or TensorFlow. Automatic differentiation, network layers, optimizers, attention, the Transformer, training, inference, and fine-tuning are all implemented from scratch, and each is explained step by step in a Jupyter Notebook.
 
 * Code repository: [gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
-* License: [MIT License](../../LICENSE)
+* License: [MIT License](LICENSE)
 
 ## Features
 

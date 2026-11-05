@@ -8,7 +8,7 @@
 不依赖 PyTorch、TensorFlow 等深度学习框架：自动微分、网络层、优化器、注意力、Transformer、训练、推理、微调，全部从零实现，并配有逐步讲解的 Jupyter Notebook。
 
 * 代码仓库：[gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
-* 许可证：[MIT License](../../LICENSE)
+* 许可证：[MIT License](LICENSE)
 
 ## 特点
 
