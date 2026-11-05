@@ -1,6 +1,6 @@
 # Preface
 
-![From Neuron to GPT: building a GPT by hand with NumPy](banner.png)
+![From Neuron to GPT](banner.png)
 
 A tutorial that starts from a single neuron and builds a GPT by hand, step by step, using nothing but NumPy. It is available in Chinese and English.
 
