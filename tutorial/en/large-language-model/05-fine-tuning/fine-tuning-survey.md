@@ -1,393 +1,478 @@
-# 微调技术综述
+# Fine-Tuning Techniques Survey
 
-预训练得到的基座模型，只会一件事：续写文本。我们实现的监督微调（SFT）教会它按照“提示 → 回答”的格式对话，
-直接偏好优化（DPO）让它偏向更好的回答。这两步，是今天大模型后训练流程的缩影。
+The base model obtained from pre-training can do only one thing: continue text. In Chapters 15 to 18, the supervised fine-tuning (SFT) we implemented taught it to converse in the "prompt → response"
+format, and direct preference optimization (DPO) made it prefer better responses. These two steps are a miniature of today's post-training pipeline for LLMs.
 
-但是，工业界的后训练要复杂得多：更大规模的指令数据、更省显存的微调方法、基于强化学习的偏好对齐，
-以及近两年最重要的突破：用可验证的奖励训练出会“思考”的推理模型。本章我们梳理微调领域的主流技术，建立一张完整的技术地图。
+But industrial post-training is far more complex: larger-scale instruction data, more memory-efficient fine-tuning methods, preference alignment based on reinforcement learning, and the most important
+breakthrough of the past two years: training reasoning models that "think" with verifiable rewards. In this chapter, we survey the mainstream techniques in fine-tuning and build a complete map of the
+field.
 
-## 微调技术全景
+> LLM technology evolves quickly. The content of this chapter is current as of November 2026.
 
-一个现代大模型，从基座到最终产品，通常要经过这些阶段：
+## Overview of fine-tuning techniques
 
-| 阶段               | 数据          | 学习信号    | 作用               |
-|------------------|-------------|---------|------------------|
-| 继续预训练 / 中期训练     | 大量无标注文本     | 下一词元预测  | 补充领域知识，扩展上下文长度   |
-| 监督微调（SFT）        | “提示 + 回答”示范 | 模仿示范    | 学会对话格式和指令遵循      |
-| 偏好优化（RLHF、DPO）   | 回答的好坏比较     | 偏好      | 对齐人类偏好：有用、无害、风格  |
-| 可验证奖励的强化学习（RLVR） | 有标准答案的题目    | 程序判定的对错 | 提升推理、数学、代码、智能体能力 |
-| 蒸馏与合并            | 强模型的输出或多个模型 | 模仿、参数平均 | 把能力迁移给小模型，融合多个模型 |
+A modern LLM, from base model to final product, usually goes through these stages:
 
-不同模型的组合方式不同。以 Qwen3 为例，后训练分为四步：用长思维链数据冷启动 → 面向推理的强化学习 →
-把“思考”和“不思考”两种模式融合 → 通用强化学习；小模型则通过“从强到弱”的蒸馏获得能力。
-Llama 3 则是多轮“采样 → 拒绝采样 → SFT → DPO”的迭代，没有使用 PPO。
+| Stage                                                 | Data                                          | Learning signal                       | Purpose                                                     |
+|-------------------------------------------------------|-----------------------------------------------|---------------------------------------|-------------------------------------------------------------|
+| Continued pre-training / mid-training                 | Large amounts of unlabeled text               | Next-token prediction                 | Add domain knowledge, extend the context size               |
+| Supervised fine-tuning (SFT)                          | "Prompt + response" demonstrations            | Imitating demonstrations              | Learn the conversation format and instruction following     |
+| Preference optimization (RLHF, DPO)                   | Comparisons of better and worse responses     | Preferences                           | Align with human preferences: helpful, harmless, style      |
+| Reinforcement learning with verifiable rewards (RLVR) | Problems with standard answers                | Correct or wrong, judged by a program | Improve reasoning, math, coding, and agent abilities        |
+| Distillation and merging                              | Outputs of a strong model, or multiple models | Imitation, parameter averaging        | Transfer abilities to small models, combine multiple models |
 
-## 监督微调进阶
+Different models combine these stages differently. Take Qwen3 as an example: its post-training has four steps: cold start with long chain-of-thought data → reinforcement learning for reasoning →
+fusing the "thinking" and "non-thinking" modes → general reinforcement learning. Small models gain their abilities through "strong-to-weak" distillation. Llama 3, on the other hand, iterates over
+multiple rounds of "sampling → rejection sampling → SFT → DPO" and does not use PPO.
 
-### 表面对齐假说
+## Advanced supervised fine-tuning
 
-我们的 SFT 只用了几百条数据。令人惊讶的是，这在一定程度上也是有效的。**LIMA** 研究只用 1000 条精心挑选的样本微调
-一个 65B 的基座模型，就得到了很强的对话能力。由此提出了**表面对齐假说**（Superficial Alignment Hypothesis）：
-模型的知识和能力几乎都来自预训练，微调主要是教会模型使用什么样的风格和格式来回应。
+### The superficial alignment hypothesis
 
-这个假说有一定道理，但是并不完整：
+Our SFT used only a few hundred samples. Surprisingly, this works to some extent. The LIMA study fine-tuned a 65B base model with only 1000 carefully selected samples and obtained strong
+conversational ability. This led to the **superficial alignment hypothesis**: almost all of a model's knowledge and abilities come from pre-training, and fine-tuning mainly teaches the model which
+style and format to use in its responses.
 
-* 对于**格式、风格、礼貌、拒答**这类行为，少量高质量数据确实足够；
-* 对于**数学、代码、推理**等需要新增或强化的能力，需要大量高质量的数据，后训练的数据规模近年来不断扩大。
+The hypothesis has some truth, but it is incomplete:
 
-所以更准确的说法是：数据的**质量和多样性**比数量更重要，而不同的能力，需要的数据量不一样。
+* For behaviors such as format, style, politeness, and refusals, a small amount of high-quality data is indeed enough;
+* For abilities that need to be added or strengthened, such as math, coding, and reasoning, large amounts of high-quality data are needed, and the scale of post-training data has kept growing in
+  recent years.
 
-### 指令数据
+So a more accurate statement is: the quality and diversity of the data matter more than its quantity, and different abilities need different amounts of data.
 
-指令数据从哪里来？
+### Instruction data
 
-* **人工编写**：质量最高，成本也最高。例如 OpenAssistant 由志愿者编写，企业则会雇佣标注员；
-* **转换已有数据集**：把传统的 NLP 任务（分类、翻译、问答）改写成指令的形式，比如 FLAN；
-* **模型生成**：用强模型生成指令和回答。**Self-Instruct** 让模型自己扩写种子任务，Alpaca 用它生成了 5.2 万条数据，
-  UltraChat、Evol-Instruct 等进一步提高了复杂度和多样性；
-* **真实对话**：用户和模型的真实对话，覆盖面广，但需要处理隐私和质量问题；
-* **可验证的合成数据**：针对数学、代码，用模型生成多个解答，程序验证后只保留正确的（拒绝采样）。
+Where does instruction data come from?
 
-数据处理的要点：去重、过滤低质量和有害内容、保证任务和领域的多样性、控制难度分布。
-另外要注意：使用其他商业模型的输出训练模型，可能受到其服务条款的限制。
+* **Human-written**: the highest quality and the highest cost. For example, OpenAssistant was written by volunteers, while companies hire annotators;
+* **Converting existing datasets**: rewrite traditional NLP tasks (classification, translation, question answering) into instruction form, such as FLAN;
+* **Model-generated**: use a strong model to generate instructions and responses. Self-Instruct lets the model expand seed tasks by itself, Alpaca used it to generate 52,000 samples, and UltraChat,
+  Evol-Instruct, and others further increased complexity and diversity;
+* **Real conversations**: real conversations between users and models, which cover a wide range but raise privacy and quality issues;
+* **Verifiable synthetic data**: for math and code, have a model generate multiple solutions and keep only the correct ones after program verification (rejection sampling).
 
-### 对话模板
+The key points of data processing: deduplication, filtering out low-quality and harmful content, ensuring diversity of tasks and domains, and controlling the difficulty distribution. Also note that
+training a model on the outputs of other commercial models may be restricted by their terms of service.
 
-多轮对话需要告诉模型：哪一段是系统提示，哪一段是用户说的，哪一段是助手回答的。这靠**对话模板**（Chat Template）实现：
-用特殊词元标记每条消息的角色和边界。例如 ChatML 格式用 `<|im_start|>` 和 `<|im_end|>` 包围每条消息，
-Llama 3 则使用专门的角色标头词元。
+### Chat template
 
-有几个要点：
+A multi-turn conversation must tell the model which segment is the system prompt, which is what the user said, and which is the assistant's response. This is done by a **chat template**: special
+tokens mark the role and boundaries of each message. For example, the ChatML format wraps each message in `<|im_start|>` and `<|im_end|>`, while Llama 3 uses dedicated role header tokens.
 
-* **轮次结束标记**：每条助手回答的结尾要有一个结束词元，让模型学会停下来。我们的实现用空行充当结束标记，
-  工业界则使用专门的特殊词元；
-* **只对回答计算损失**：用户和系统的内容只作为条件，不计入损失，这正是我们在 SFT 中实现的损失掩码；
-* **模板必须一致**：训练和推理使用的模板必须完全一致，否则模型的表现会明显下降；
-* **扩展角色**：工具调用、工具返回结果、思考过程（比如 `<think>` 标签）也都通过模板中的特殊标记区分。
+A few key points:
 
-### 训练技巧
+* **End-of-turn marker**: the end of each assistant response needs an end token, so that the model learns to stop. Our implementation uses a blank line as the end marker, while industry uses dedicated
+  special tokens;
+* **Loss only on the response**: the user's and system's content serves only as the condition and is not counted in the loss. This is exactly the loss mask we implemented in SFT;
+* **The template must be consistent**: the template used in training and inference must be exactly the same, otherwise the model's performance drops noticeably;
+* **Extended roles**: tool calls, tool results, and the thinking process (such as the `<think>` tag) are also distinguished by special markers in the template.
 
-* **学习率**：比预训练小 1 到 2 个数量级，全参数微调常用 1e-5 左右；
-* **轮次**：通常 2 到 3 个轮次，过多会过拟合、遗忘预训练的知识；
-* **序列打包**（Packing）：把多条短样本拼接成一条长序列，提高 GPU 利用率。需要用注意力掩码隔开不同的样本，
-  避免互相“看见”；
-* **损失的归一化方式**：按词元平均还是按样本平均，会改变长短回答在训练中的权重，需要注意；
-* **数据回放**：在微调数据中混入一部分预训练数据或者通用数据，减轻遗忘；
-* **划分验证集**：我们的 SFT 没有使用验证集，实践中应当监控验证损失和实际任务上的表现。
+### Training tips
 
-### 继续预训练
+* **Learning rate**: 1 to 2 orders of magnitude smaller than in pre-training, and about 1e-5 is common for full-parameter fine-tuning;
+* **Epochs**: usually 2 to 3, and too many cause overfitting and forgetting of pre-trained knowledge;
+* **Packing**: concatenate multiple short samples into one long sequence to improve GPU utilization. An attention mask is needed to separate the different samples so that they cannot "see" each other;
+* **Loss normalization**: averaging per token or per sample changes the weight that long and short responses get in training, so pay attention to it;
+* **Data replay**: mix some pre-training data or general data into the fine-tuning data to reduce forgetting;
+* **Splitting a validation set**: our SFT did not use a validation set, but in practice you should monitor the validation loss and the performance on real tasks.
 
-当模型需要掌握新的领域（医学、法律、代码）或者新的语言时，只靠 SFT 的少量数据不够，需要在大量无标注文本上**继续预训练**
-（Continued Pretraining）。训练目标和预训练完全相同。
+### Continued pre-training
 
-要点：
+When a model needs to master a new domain (medicine, law, code) or a new language, the small amount of SFT data is not enough, and the model must be **continually pre-trained** on large amounts of
+unlabeled text. The training objective is exactly the same as in pre-training.
 
-* 重新预热学习率，再逐步衰减，学习率通常比从头预训练小；
-* 混入一部分原来的通用数据（回放），防止灾难性遗忘；
-* 大模型预训练的末期，会用高质量数据和长文本做“中期训练”（见预训练技术综述），本质上也是继续预训练。
+Key points:
 
-## 参数高效微调
+* Warm the learning rate up again and then decay it gradually; the learning rate is usually smaller than in pre-training from scratch;
+* Mix in some of the original general data (replay) to prevent catastrophic forgetting;
+* At the end of pre-training, large models use high-quality data and long texts for "mid-training" (see the pre-training survey), which is essentially also continued pre-training.
 
-### 全参数微调的代价
+## Parameter-efficient fine-tuning
 
-全参数微调需要为每个参数保存很多东西。采用 BF16 混合精度和 Adam 优化器时，每个参数需要：
-权重 2 字节 + 梯度 2 字节 + FP32 主权重 4 字节 + Adam 的两个动量各 4 字节，一共 **16 字节**。
-一个 7B 的模型就需要约 112GB 显存，还不包括激活值；70B 的模型需要超过 1TB。
+### The cost of full-parameter fine-tuning
 
-另外，每个任务都要保存一份完整的模型副本，服务多个任务时，存储和切换的成本很高。
+Full-parameter fine-tuning has to store many things for every parameter. With BF16 mixed precision and the Adam optimizer, each parameter needs: 2 bytes for the weight + 2 bytes for the gradient + 4
+bytes for the FP32 master weight + 4 bytes each for Adam's two moments, 16 bytes in total. A 7B model needs about 112 GB of GPU memory, not including activations, and a 70B model needs more than 1 TB.
+
+In addition, every task needs a complete copy of the model, so serving multiple tasks makes storage and switching expensive.
 
 ### LoRA
 
-**LoRA**（Low-Rank Adaptation）基于一个观察：微调带来的权重变化，大致位于一个低秩的子空间。
-所以冻结原来的权重 $W$，只训练一个低秩的增量：
+**LoRA** (Low-Rank Adaptation) is based on an observation: the weight change brought by fine-tuning roughly lies in a low-rank subspace. So we freeze the original weight $W$ and train only a low-rank
+increment:
 
 $$
 W' = W + \frac{\alpha}{r} B A, \quad A \in \mathbb{R}^{r \times k},\ B \in \mathbb{R}^{d \times r},\ r \ll \min(d, k)
 $$
 
-$B$ 初始化为 0，所以训练开始时模型和原模型完全一致。可训练参数从 $dk$ 降到 $r(d+k)$，通常只有原来的 1% 或者更少。
+Where:
 
-LoRA 的好处：
+* $W$: the original weight, of shape $d \times k$, frozen during training;
+* $A$, $B$: two small low-rank matrices, the only parameters that need training;
+* $r$: the rank, much smaller than $d$ and $k$;
+* $\alpha$: a scaling coefficient that, together with $r$, determines the size of the increment.
 
-* **省显存**：不需要为冻结的权重保存梯度和优化器状态；
-* **便于部署**：训练完成后可以把 $BA$ 合并回 $W$，推理没有额外开销；也可以保留适配器，
-  在同一个基座上按需切换多个适配器，服务多个任务；
-* **便于存储**：每个任务只需要保存几十 MB 的适配器。
+$B$ is initialized to 0, so at the start of training the model is identical to the original. The number of trainable parameters drops from $dk$ to $r(d+k)$, usually 1% of the original or less.
 
-Thinking Machines 的研究（“LoRA Without Regret”）给出了一些实用结论：
+The benefits of LoRA:
 
-* 在常见规模的 SFT 数据上，只要**适配器的容量足够**，LoRA 能达到和全参数微调相当的效果；数据量超过容量时，LoRA 会落后；
-* 应该把 LoRA 加到**所有线性层**，包括 MLP 层，只加在注意力层效果明显更差；
-* LoRA 最优的学习率大约是全参数微调的 10 倍；对大批量比全参数微调更敏感；
-* 在强化学习中，每个样本提供的信息量很少，即使秩只有 1，也能追平全参数微调。
+* **Saves memory**: no gradients or optimizer states need to be stored for the frozen weights;
+* **Easy to deploy**: after training, $BA$ can be merged back into $W$, with no extra inference cost; alternatively, the adapters can be kept, and multiple adapters can be switched on demand on the
+  same base model to serve multiple tasks;
+* **Easy to store**: each task needs to store only an adapter of a few dozen MB.
 
-## 基于人类反馈的强化学习
+Research from Thinking Machines ("LoRA Without Regret") gave some practical conclusions:
 
-SFT 只能让模型模仿示范，但是很多时候“什么是好回答”很难写成示范，却很容易比较：给出两个回答，人很容易判断哪个更好。
-**基于人类反馈的强化学习**（Reinforcement Learning from Human Feedback，RLHF）利用的就是这种比较信息。
-InstructGPT 用它训练出的 1.3B 模型，在人类评价中优于 175B 的 GPT-3。
+* On SFT datasets of common sizes, as long as the adapter has enough capacity, LoRA can match full-parameter fine-tuning; when the data exceeds the capacity, LoRA falls behind;
+* LoRA should be applied to all linear layers, including the MLP layers; applying it only to the attention layers works worse;
+* The optimal learning rate for LoRA is about 10 times that of full-parameter fine-tuning, and it is more sensitive to large batch sizes than full-parameter fine-tuning;
+* In reinforcement learning, each sample provides very little information, so even rank 1 can match full-parameter fine-tuning.
 
-### 三个步骤
+### QLoRA
 
-1. **监督微调**：用示范数据训练得到初始策略（也是后面的参考模型）；
-2. **训练奖励模型**：收集人类对同一个提示的多个回答的偏好比较，训练一个模型给回答打分；
-3. **强化学习**：让模型生成回答，用奖励模型打分，用强化学习算法更新模型，使它得到更高的分。
+QLoRA builds on LoRA by quantizing the frozen base weights to 4 bits (NF4 format) and training the adapters only in BF16, dequantizing the weights on the fly in the forward and backward passes.
+Combined with double quantization and paged optimizers, a single 48 GB GPU can fine-tune a 65B model. The cost is that dequantization adds extra computation, so training is slower than LoRA.
 
-### 奖励模型
+## Reinforcement learning from human feedback
 
-奖励模型通常是在语言模型的基础上增加一个输出标量的头。训练使用 **Bradley-Terry** 模型：
-假设回答 $y_w$ 比 $y_l$ 更好的概率，取决于它们的奖励之差：
+SFT can only make the model imitate demonstrations, but often "what is a good response" is hard to write as a demonstration and easy to compare: given two responses, people can easily tell which one
+is better. **Reinforcement learning from human feedback** (RLHF) exploits exactly this comparison information. The 1.3B model that InstructGPT trained with it beat the 175B GPT-3 in human evaluations.
+
+### Three steps
+
+1. **Supervised fine-tuning**: train on demonstration data to get the initial policy (which is also the reference model later);
+2. **Training a reward model**: collect human preference comparisons among multiple responses to the same prompt, and train a model to score responses;
+3. **Reinforcement learning**: let the model generate responses, score them with the reward model, and update the model with a reinforcement learning algorithm so that it gets higher scores.
+
+### Reward model
+
+A reward model is usually a language model with an extra head that outputs a scalar. It is trained with the Bradley-Terry model: assume that the probability that response $y_c$ is better than $y_r$
+depends on the difference of their rewards:
 
 $$
-P(y_w \succ y_l \mid x) = \sigma\big(r(x, y_w) - r(x, y_l)\big)
+P(y_c \succ y_r \mid x) = \sigma\big(r(x, y_c) - r(x, y_r)\big)
 $$
 
-训练的损失是 $-\log \sigma\big(r(x, y_w) - r(x, y_l)\big)$，让被偏好的回答得分更高。
+Where:
 
-奖励模型只是人类偏好的一个不完美的**代理**。模型会钻它的漏洞：生成并不真正更好、但奖励模型打分更高的回答，
-比如更长、更讨好的回答，这叫做**奖励黑客**（Reward Hacking）或者过度优化。
+* $x$: the prompt;
+* $y_c$, $y_r$: the chosen answer and the rejected answer;
+* $r(x, y)$: the score the reward model gives to response $y$;
+* $\sigma$: the Sigmoid function.
 
-### 强化学习
+The training loss is $-\log \sigma\big(r(x, y_c) - r(x, y_r)\big)$, which makes the preferred response score higher.
 
-强化学习阶段的优化目标是：
+A reward model is only an imperfect proxy for human preferences. The model exploits its loopholes: it generates responses that are not truly better but score higher with the reward model, such as
+longer and more flattering ones. This is called **reward hacking** or over-optimization.
+
+### Reinforcement learning
+
+The optimization objective of the reinforcement learning stage is:
 
 $$
 \max_{\pi} \ \mathbb{E}_{x,\, y \sim \pi}\big[r(x, y)\big] - \beta\, \mathrm{KL}\big(\pi \,\|\, \pi_{\text{ref}}\big)
 $$
 
-第一项最大化奖励，第二项用 **KL 散度**惩罚策略偏离参考模型太远。它的作用是：保持回答的流畅性，
-并且限制奖励黑客的空间。系数 $\beta$ 控制约束的强度。
+Where:
 
-最常用的算法是 **PPO**（Proximal Policy Optimization）：
+* $\pi$: the policy being optimized, that is, the language model;
+* $\pi_{\text{ref}}$: the reference model;
+* $\mathrm{KL}$: the KL divergence, which measures the difference between two probability distributions;
+* $\beta$: the coefficient of the KL penalty.
 
-* 需要一个**价值模型**（Critic）估计每个位置的价值，再用广义优势估计（GAE）计算每个词元的优势；
-* 用裁剪的目标函数限制每次更新的幅度，避免策略变化过大；
-* 流程是循环的：采样回答 → 打分 → 计算优势 → 在同一批数据上做若干轮小批量更新。
+The first term maximizes the reward, and the second term uses the KL divergence to penalize the policy for drifting too far from the reference model. Its role is to keep the responses fluent and to
+limit the room for reward hacking. The larger $\beta$ is, the stronger the constraint.
 
-语言模型中，每个词元是一个“动作”，奖励通常只在整个回答结束时给出。
+The most commonly used algorithm is **PPO** (Proximal Policy Optimization):
 
-### RLHF 的代价
+* It needs a **value model** (critic) to estimate the value at each position, and then uses generalized advantage estimation (GAE) to compute the advantage of each token;
+* It uses a clipped objective function to limit the size of each update and avoid excessive policy changes;
+* The process is a loop: sample responses → score them → compute advantages → run several rounds of mini-batch updates on the same batch of data.
 
-* **模型多**：需要同时维护策略模型、参考模型、奖励模型和价值模型，显存和工程负担很重；
-* **在线采样**：每轮都要用当前模型生成回答，生成速度慢；
-* **难调**：对超参数敏感，训练不稳定，奖励黑客难以防范；
-* **标注昂贵**：高质量的人类偏好数据成本很高。
+In a language model, each token is an "action", and the reward is usually given only at the end of the whole response.
 
-### DPO 和 RLHF 的关系
+### The cost of RLHF
 
-DPO 的出发点，是发现上面的优化目标有闭式的最优解：
+* **Many models**: the policy, reference, reward, and value models must be maintained at the same time, which is a heavy burden in memory and engineering;
+* **Online sampling**: every round has to generate responses with the current model, and generation is slow;
+* **Hard to tune**: it is sensitive to hyperparameters, training is unstable, and reward hacking is hard to guard against;
+* **Expensive annotation**: high-quality human preference data is costly.
+
+### The relationship between DPO and RLHF
+
+DPO starts from the discovery that the optimization objective above has a closed-form optimal solution:
 
 $$
 \pi^*(y \mid x) = \frac{1}{Z(x)}\, \pi_{\text{ref}}(y \mid x)\, \exp\!\Big(\frac{r(x, y)}{\beta}\Big)
 $$
 
-反过来，可以把奖励用策略表示出来：
+Where:
+
+* $\pi^*$: the optimal policy;
+* $Z(x)$: a normalization constant that makes $\pi^*$ a probability distribution.
+
+Conversely, the reward can be expressed in terms of the policy:
 
 $$
 r(x, y) = \beta \log \frac{\pi^*(y \mid x)}{\pi_{\text{ref}}(y \mid x)} + \beta \log Z(x)
 $$
 
-把它代入 Bradley-Terry 的偏好概率，其中与 $y$ 无关的 $Z(x)$ 在两个回答的差中正好抵消，
-奖励模型就被“消掉”了，得到只依赖策略和参考模型的损失：
+Substituting it into the Bradley-Terry preference probability, the term $Z(x)$, which does not depend on $y$, cancels exactly in the difference between the two responses. The reward model is "
+eliminated", and we get a loss that depends only on the policy and the reference model:
 
 $$
-\mathcal{L}_{\text{DPO}} = -\log \sigma\Big(\beta\Big[\log\frac{\pi_\theta(y_w \mid x)}{\pi_{\text{ref}}(y_w \mid x)} - \log\frac{\pi_\theta(y_l \mid x)}{\pi_{\text{ref}}(y_l \mid x)}\Big]\Big)
+\mathcal{L}_{\text{DPO}} = -\log \sigma\Big(\beta\Big[\log\frac{\pi_\theta(y_c \mid x)}{\pi_{\text{ref}}(y_c \mid x)} - \log\frac{\pi_\theta(y_r \mid x)}{\pi_{\text{ref}}(y_r \mid x)}\Big]\Big)
 $$
 
-这就是我们实现的 DPO。所以 DPO 并不是和 RLHF 完全不同的方法，而是在**同一个优化目标**下的一种离线、简化的求解方式：
-不需要奖励模型，不需要在线采样，不需要价值模型，像做 SFT 一样训练就行。
-括号中的量可以看作模型的**隐式奖励**，其中 $\beta$ 就是 KL 约束的强度。
+Where:
 
-## 偏好优化的其他算法
+* $\pi_\theta$: the policy being trained;
+* the other symbols are the same as above.
 
-### DPO 的问题
+This is the DPO we implemented. So DPO is not a method completely different from RLHF, but an offline, simplified way of solving the same optimization objective: no reward model, no online sampling,
+and no value model, and it trains just like SFT. The quantity in the brackets can be seen as the model's implicit reward, and $\beta$ is the strength of the KL constraint.
 
-DPO 简单有效，但是也有一些已知的问题：
+## Other preference optimization algorithms
 
-* **离线数据的分布偏差**：偏好数据是别的模型生成的，和当前策略的分布不一致，训练信号不一定对应当前模型会犯的错误；
-* **似然下降**：DPO 只关心好回答和坏回答的**差距**，训练中两者的概率可能同时下降，好回答的概率甚至会低于训练前；
-* **长度偏置**：容易倾向于更长的回答；
-* **过拟合**：偏好数据中几乎总是确定的“胜负”，$\beta$ 过小时，策略会偏离参考模型太远；
-* **噪声敏感**：标注中的噪声会直接影响训练。
+### Problems with DPO
 
-### 在线偏好优化
+DPO is simple and effective, but it has some known problems:
 
-离线方法的根本局限，是数据不来自当前策略。**在线**或者**迭代**的方法让模型一边训练一边生成新的数据：
+* **Distribution shift of offline data**: the preference data was generated by other models and does not match the distribution of the current policy, so the training signal does not necessarily
+  correspond to the mistakes the current model makes;
+* **Likelihood displacement**: DPO cares only about the gap between good and bad responses, so during training the probabilities of both may fall together, and the probability of the good response may
+  even drop below its value before training;
+* **Length bias**: it tends to prefer longer responses;
+* **Overfitting**: preference data almost always has a definite "winner and loser", and when $\beta$ is too small, the policy drifts too far from the reference model;
+* **Noise sensitivity**: noise in the annotations directly affects training.
 
-* **在线 DPO、迭代 DPO**：用当前模型采样多个回答，用奖励模型或者判官模型标出好坏，构造偏好对，训练后再重复；
-* **拒绝采样微调**（Rejection Sampling Fine-tuning）：对每个提示采样多个回答，只保留得分最高的，用它们做 SFT。简单稳定，应用很广；
-* **RLOO**：REINFORCE 的改进版，用同一个提示的其他回答的平均奖励作基线，不需要价值模型。
+### Online preference optimization
 
-### AI 反馈
+The fundamental limitation of offline methods is that the data does not come from the current policy. Online or iterative methods let the model generate new data while it trains:
 
-人类标注昂贵而且慢，所以越来越多地使用 AI 来给出反馈（RLAIF）：
+* **Online DPO, iterative DPO**: sample multiple responses with the current model, mark good and bad with a reward model or a judge model, build preference pairs, and repeat after training;
+* **Rejection sampling fine-tuning**: sample multiple responses for each prompt, keep only the highest-scoring ones, and use them for SFT. It is simple, stable, and widely used;
+* **RLOO**: an improved version of REINFORCE that uses the average reward of the other responses to the same prompt as the baseline, with no need for a value model.
 
-* **LLM 作为判官**：让强模型比较或者给回答打分，生成偏好数据，比如 UltraFeedback；
-* **宪法式 AI**（Constitutional AI）：给出一组原则（“宪法”），让模型依据原则批评和改写自己的回答，再用 AI 的偏好训练；
-* **自我奖励**：让模型自己当判官，给自己的回答打分。
+### AI feedback
 
-AI 判官有它自己的偏差：偏爱更长的回答、偏爱排在前面的回答、偏爱自己风格的回答。所以仍然需要人类数据来校准。
+Human annotation is expensive and slow, so AI is increasingly used to provide feedback (RLAIF):
 
-## 可验证奖励的强化学习
+* **LLM as a judge**: have a strong model compare or score responses to generate preference data, such as UltraFeedback;
+* **Constitutional AI**: give a set of principles (a "constitution"), have the model critique and rewrite its own responses according to the principles, and then train on the AI's preferences;
+* **Self-rewarding**: let the model act as its own judge and score its own responses.
 
-### 可验证奖励
+AI judges have biases of their own: they prefer longer responses, responses placed first, and responses in their own style. So human data is still needed for calibration.
 
-RLHF 的奖励来自一个训练出来的、容易被钻空子的奖励模型。而对于**有客观答案**的任务，奖励可以直接用程序计算：
+## Reinforcement learning with verifiable rewards
 
-* **数学**：最终答案是否和标准答案一致；
-* **代码**：能否通过单元测试；
-* **指令遵循**：回答是否满足可检查的约束（字数、格式、关键词）；
-* **逻辑谜题**：答案是否满足规则。
+### Verifiable rewards
 
-这就是**可验证奖励的强化学习**（Reinforcement Learning with Verifiable Rewards，RLVR），这个名称由 Tülu 3 提出。
-它的好处是奖励客观、没有奖励模型要训练、很难被黑客攻击。局限是只适用于能自动验证对错的任务。
+The reward of RLHF comes from a trained reward model that is easy to exploit. For tasks with objective answers, the reward can be computed directly by a program:
+
+* **Math**: whether the final answer matches the standard answer;
+* **Code**: whether it passes the unit tests;
+* **Instruction following**: whether the response satisfies checkable constraints (word count, format, keywords);
+* **Logic puzzles**: whether the answer satisfies the rules.
+
+This is **reinforcement learning with verifiable rewards** (RLVR), a name proposed by Tülu 3. Its benefits are that the reward is objective, no reward model has to be trained, and it is hard to hack.
+Its limitation is that it applies only to tasks whose correctness can be verified automatically.
 
 ### GRPO
 
-**GRPO**（Group Relative Policy Optimization）由 DeepSeekMath 提出，它去掉了 PPO 中的价值模型。
-做法是：对每个提示采样一组（$G$ 个）回答，用**组内的相对奖励**作为优势：
+**GRPO** (Group Relative Policy Optimization) was proposed by DeepSeekMath, and it removes the value model from PPO. The approach: for each prompt, sample a group of ($G$) responses and use the
+relative reward within the group as the advantage:
 
 $$
 \hat{A}_i = \frac{r_i - \text{mean}(r_1, \dots, r_G)}{\text{std}(r_1, \dots, r_G)}
 $$
 
-同一组中，比平均水平好的回答被鼓励，比平均水平差的被抑制。优化的目标仍然是 PPO 风格的裁剪目标，
-对每个词元计算新旧策略的概率比，再乘以这个优势，通常还会加上对参考模型的 KL 惩罚。
+Where:
 
-去掉价值模型省下了大量显存和工程复杂度，也不再需要训练一个很难训练的价值函数。GRPO 因此成为推理模型训练的主流算法之一。
+* $\hat{A}_i$: the advantage of the $i$-th response;
+* $r_i$: the reward of the $i$-th response;
+* $\text{mean}$, $\text{std}$: the mean and standard deviation of the rewards of a group of responses.
+
+Within a group, responses better than average are encouraged, and those worse than average are suppressed. The optimization objective is still a PPO-style clipped objective: for each token, compute
+the probability ratio between the new and old policies and multiply it by this advantage, usually with a KL penalty against the reference model added.
+
+Removing the value model saves a lot of memory and engineering complexity, and there is no longer a value function that is hard to train. GRPO has therefore become one of the mainstream algorithms for
+training reasoning models.
 
 ### DeepSeek-R1
 
-2025 年 1 月发布的 **DeepSeek-R1**，让 RLVR 成为焦点：
+DeepSeek-R1, released in January 2025, made RLVR the focus of attention:
 
-* **R1-Zero**：直接在基座模型上用 GRPO 做强化学习，奖励只有答案是否正确和格式是否合规，没有任何人工写的思考示范。
-  训练中，模型自发地学会了生成更长的思考、自我检查、回头纠正，推理能力显著提升；
-* 但是 R1-Zero 的输出可读性差，会混杂语言。所以正式的 **R1** 采用了四阶段流程：
-  少量长思维链数据**冷启动** SFT → 面向推理的 **RL** → 用 RL 模型**拒绝采样**生成数据再做 SFT → 面向全部场景的 **RL**；
-* 把 R1 生成的数据**蒸馏**给小模型，效果比直接对小模型做强化学习更好。
+* **R1-Zero**: run reinforcement learning with GRPO directly on the base model, where the reward is only whether the answer is correct and whether the format is valid, with no human-written thinking
+  demonstrations at all. During training, the model spontaneously learned to generate longer thinking, check itself, and go back to correct itself, and its reasoning ability improved significantly;
+* But the output of R1-Zero is hard to read and mixes languages. So the official R1 adopted a four-stage pipeline: cold-start SFT with a small amount of long chain-of-thought data → RL for reasoning →
+  generating data by rejection sampling from the RL model and doing SFT again → RL for all scenarios;
+* Distilling the data generated by R1 into small models works better than running reinforcement learning directly on small models.
 
-这个流程已经成为推理模型的标准做法。后续的 Qwen3 等模型也采用了类似的“冷启动 → 推理 RL → 通用 RL”流程。
+This pipeline has become the standard practice for reasoning models. Later models such as Qwen3 also adopted a similar "cold start → reasoning RL → general RL" pipeline.
 
-### 变体与改进
+### Variants and improvements
 
-GRPO 在大规模、长思维链训练中暴露了一些问题，催生了一批改进方法：
+GRPO exposed some problems in large-scale training with long chains of thought, which gave rise to a batch of improved methods:
 
-* **Dr. GRPO**：指出 GRPO 中按回答长度归一化和按标准差归一化，会引入偏置（比如让错误的回答越来越长），去掉这两项；
-* **DAPO**：字节跳动提出的一组实用技巧：**Clip-Higher**（把裁剪上界调高，让低概率词元有更多增长空间，缓解熵崩塌）、
-  **动态采样**（丢弃整组全对或全错的提示，因为它们的优势为 0，没有学习信号）、**词元级损失**（按词元平均，而不是按回答平均）、
-  对超长回答的惩罚，同时去掉了 KL 项；
-* **GSPO**：把重要性比从词元级改成**序列级**（整个回答的几何平均），降低方差，对 MoE 模型尤其稳定；
-* **CISPO** 等：截断重要性权重本身，而不是直接丢弃超出范围的词元的梯度。
+* **Dr. GRPO**: points out that normalizing by response length and by standard deviation in GRPO introduces biases (for example, wrong responses get longer and longer), and removes both;
+* **DAPO**: a set of practical techniques proposed by ByteDance: Clip-Higher (raise the upper clipping bound so that low-probability tokens have more room to grow, which eases entropy collapse),
+  dynamic sampling (discard prompts whose whole group is all correct or all wrong, because their advantage is 0 and there is no learning signal), token-level loss (average per token rather than per
+  response), and a penalty for overlong responses, while also removing the KL term;
+* **GSPO**: changes the importance ratio from token level to sequence level (the geometric mean over the whole response), which reduces variance and is especially stable for MoE models;
+* **CISPO**: clips the importance weights themselves, instead of directly discarding the gradients of tokens that fall outside the range.
 
-还有一类问题来自系统：训练引擎和推理引擎在数值上并不完全一致，会让本来“在线”的采样悄悄变成“离线”。
-常用的修正是**截断重要性采样**。
+Another class of problems comes from the system: the training engine and the inference engine are not numerically identical, which quietly turns supposedly "online" sampling into "offline" sampling. A
+common fix is truncated importance sampling.
 
-除了数学和代码，RLVR 已经扩展到**智能体**场景：让模型在多轮、可使用工具的环境中完成任务（比如修复代码仓库的缺陷），
-用任务是否完成作为奖励。DeepSeek-V4 等近期模型就把智能体能力作为重点。
+Beyond math and code, RLVR has been extended to agent scenarios: the model completes tasks in multi-turn environments where it can use tools (for example, fixing a bug in a code repository), and
+whether the task is completed serves as the reward. DeepSeek-V4 (released in April 2026) is one example: it targets long-running agent tasks and is trained with reinforcement learning in real tool
+environments.
 
-关于强化学习究竟带来了什么，目前仍有争论：有研究发现，RLVR 主要提升了模型一次就答对的概率，
-但是在大量采样时，基座模型能解决的问题范围并没有明显扩大。这仍是活跃的研究课题。
+What reinforcement learning actually brings is still debated: some studies found that RLVR mainly raises the probability that the model gets a problem right in one attempt, but with a large number of
+samples, the range of problems the base model can solve has not clearly expanded. This remains an active research topic.
 
-### 过程奖励
+### Process rewards
 
-上面的奖励只看最终答案，称为**结果奖励**（Outcome Reward）。**过程奖励模型**（Process Reward Model，PRM）
-则对推理的每一步打分：
+The rewards above look only at the final answer and are called **outcome rewards**. A **process reward model** (PRM) scores every step of the reasoning:
 
-* 优点：信号更密集，可以定位错误发生在哪一步，也可以用于搜索时筛选分支；
-* 缺点：人工标注每一步的成本极高，“步骤”的划分也很难定义，更容易被钻空子。
+* Advantage: the signal is denser, it can locate the step where an error occurred, and it can also be used to filter branches during search;
+* Disadvantage: manually annotating every step is extremely costly, the division into "steps" is hard to define, and it is easier to exploit.
 
-自动构造过程标签的方法也有不少（比如用蒙特卡洛采样估计每一步的价值，或者从结果奖励中隐式学习）。
-但是 DeepSeek-R1 的报告提到，他们尝试过程奖励的效果有限。目前主流的推理模型仍然以结果奖励为主。
+There are also quite a few methods for building process labels automatically (for example, estimating the value of each step with Monte Carlo sampling, or learning it implicitly from outcome rewards).
+But the DeepSeek-R1 report mentions that their attempts with process rewards had limited effect. Mainstream reasoning models still rely mainly on outcome rewards.
 
-## 知识蒸馏与模型合并
+## Knowledge distillation and model merging
 
-### 知识蒸馏
+### Knowledge distillation
 
-**知识蒸馏**（Knowledge Distillation）让小模型（学生）学习大模型（教师）的行为：
+**Knowledge distillation** lets a small model (the student) learn the behavior of a large model (the teacher):
 
-* **软标签蒸馏**：让学生的输出分布逼近教师的输出分布（最小化 KL 散度）。信息量比单个词元的“硬标签”大得多，
-  但是需要学生和教师使用相同的词表；
-* **数据蒸馏**：让教师生成回答，再用这些数据对学生做 SFT。Alpaca 和 R1 蒸馏出的小模型都是这种做法，简单，也适用于闭源教师；
-* **在线策略蒸馏**（On-policy Distillation）：由**学生**生成回答，教师对每个词元给出评价，学生向教师靠拢。
-  学生训练的是自己会遇到的分布，同时每个词元都有信号。据报告，其计算效率可以比只用结果奖励的强化学习高出数十倍。
-  Qwen3 的“从强到弱”蒸馏，就先用教师的输出做数据蒸馏，再做在线策略蒸馏。
+* **Soft-label distillation**: make the student's output distribution approach the teacher's (minimizing the KL divergence). It carries much more information than the "hard label" of a single token,
+  but the student and teacher must use the same vocabulary;
+* **Data distillation**: have the teacher generate responses and then do SFT on the student with this data. The small models distilled from Alpaca and R1 both took this approach, which is simple and
+  also works with closed-source teachers;
+* **On-policy distillation**: the student generates responses, the teacher evaluates each token, and the student moves closer to the teacher. The student trains on the distribution it will actually
+  encounter, and every token carries a signal. Qwen3's "strong-to-weak" distillation first does data distillation with the teacher's outputs and then on-policy distillation. The Qwen3 report shows
+  that, on the same small model, on-policy distillation used about one tenth of the GPU time of reinforcement learning and reached a higher score.
 
-使用蒸馏时，要注意教师模型的使用许可。
+When using distillation, pay attention to the license of the teacher model.
 
-### 模型合并
+### Model merging
 
-**模型合并**（Model Merging）不需要训练，直接在参数空间里把多个模型合成一个：
+**Model merging** needs no training and directly combines multiple models into one in parameter space:
 
-* **线性平均**：把多个微调模型的参数取平均（Model Soups），通常比单个模型更稳健。Llama 3 就对不同数据或者超参数训练得到的模型做了平均；
-* **任务向量**（Task Arithmetic）：把微调后的参数减去基座参数得到“任务向量”，加上几个任务向量就能让模型同时具备多种能力，也可以减去一个任务向量来“遗忘”某种能力；
-* **TIES、DARE**：处理多个任务向量之间的冲突：TIES 修剪小的变化，并解决符号冲突；DARE 随机丢弃一部分变化，再重新缩放；
-* **SLERP**：在球面上插值两个模型的参数。
+* **Linear averaging**: average the parameters of multiple fine-tuned models (model soups), which is usually more robust than any single model. Llama 3 averaged models trained with different data or
+  hyperparameters;
+* **Task vectors** (task arithmetic): subtract the base parameters from the fine-tuned parameters to get a "task vector". Adding several task vectors gives a model several abilities at once, and
+  subtracting one can make the model "forget" an ability;
+* **TIES, DARE**: handle conflicts among multiple task vectors: TIES trims small changes and resolves sign conflicts; DARE randomly drops a portion of the changes and rescales the rest;
+* **SLERP**: interpolate the parameters of two models on a sphere.
 
-合并要求这些模型来自同一个基座，而且结果并不总有保证，需要评测。开源社区常用 mergekit 等工具。
+Merging requires the models to come from the same base model, and the result is not always guaranteed, so it needs evaluation. The open-source community often uses tools such as mergekit.
 
-## 训练系统
+## Training systems
 
-### 显存优化
+### Memory optimization
 
-微调的显存，主要来自权重、梯度、优化器状态和激活值。常用的省显存方法：
+The memory of fine-tuning comes mainly from weights, gradients, optimizer states, and activations. Common ways to save memory:
 
-* **ZeRO 和 FSDP**：把优化器状态、梯度、权重切分到多张卡上；
-* **激活重计算**：前向时不保存中间结果，反向时重新计算；
-* **梯度累积**：用小批量多次累积，模拟大批量；
-* **低精度优化器**：比如 8 位优化器，缩小优化器状态；
-* **卸载**：把优化器状态甚至权重转移到 CPU 内存或者 SSD；
-* **参数高效微调**：LoRA 和 QLoRA，从根本上减少需要保存的状态；
-* **融合算子**：减少显存读写，节省激活值。
+* **ZeRO and FSDP**: shard the optimizer states, gradients, and weights across multiple GPUs;
+* **Activation recomputation**: do not save intermediate results in the forward pass, and recompute them in the backward pass;
+* **Gradient accumulation**: accumulate the gradients of several small batches to simulate a larger batch size;
+* **Low-precision optimizers**: for example, 8-bit optimizers, which shrink the optimizer states;
+* **Offloading**: move the optimizer states, or even the weights, to CPU memory or SSD;
+* **Parameter-efficient fine-tuning**: LoRA and QLoRA, which fundamentally reduce the state that must be stored;
+* **Fused kernels**: reduce memory reads and writes and save activations.
 
-### 强化学习的训练系统
+### Training systems for reinforcement learning
 
-强化学习的训练和 SFT 完全不同：每一轮都要先让模型生成大量回答，再用这些回答更新模型。
-其中**生成往往占用大部分时间**，而且回答长度差异很大，少数很长的回答会拖慢整批。
+Reinforcement learning training is completely different from SFT: every round first lets the model generate a large number of responses and then updates the model with them. Generation often takes
+most of the time, and the lengths of the responses vary widely, so a few very long responses slow down the whole batch.
 
-所以强化学习系统通常由两部分组成：
+So a reinforcement learning system usually has two parts:
 
-* **推理引擎**（vLLM、SGLang）：负责高效地生成回答；
-* **训练引擎**（FSDP、Megatron）：负责计算损失和更新参数。
+* **Inference engine** (vLLM, SGLang): responsible for generating responses efficiently;
+* **Training engine** (FSDP, Megatron): responsible for computing the loss and updating the parameters.
 
-两者之间要同步最新的权重。部署方式有**同机共置**（同一批 GPU 分时运行生成和训练，省 GPU）和**分离部署**（生成和训练占用不同的 GPU，可以**异步**进行，
-但是生成用的是稍旧的模型，需要处理数据的陈旧问题）。
+The latest weights must be synchronized between the two. There are two deployment modes: colocated (the same GPUs run generation and training in turns, saving GPUs) and disaggregated (generation and
+training use different GPUs and can run asynchronously, but generation uses a slightly older model, so data staleness has to be handled).
 
-此外，奖励的计算本身也是系统问题：比如在沙箱里并发运行代码、调用验证器、管理多轮智能体的环境。
-训练引擎和推理引擎的数值差异，则需要像推理技术综述中提到的那样，通过批量不变的算子和重要性校正来处理。
+In addition, computing the reward is itself a systems problem: for example, running code concurrently in sandboxes, calling verifiers, and managing the environments of multi-turn agents. The numerical
+differences between the training and inference engines must be handled, as mentioned in the inference survey, with batch-size-invariant kernels and importance correction.
 
-### 常用工具
+### Common tools
 
-* **Hugging Face TRL**：提供 SFT、DPO、GRPO 等训练器；**PEFT** 提供 LoRA 等方法；
-* **Axolotl、LLaMA-Factory、Unsloth、torchtune**：封装好的微调工具，通过配置文件即可使用，Unsloth 特别强调单卡的训练效率；
-* **verl、OpenRLHF**：面向大规模强化学习的框架，集成了推理引擎和分布式训练；
-* **DeepSpeed、Megatron**：底层的分布式训练框架。
+* **Hugging Face TRL**: provides trainers for SFT, DPO, GRPO, and more; PEFT provides methods such as LoRA;
+* **Axolotl, LLaMA-Factory, Unsloth**: ready-made fine-tuning tools that work through configuration files; Unsloth especially emphasizes training efficiency on a single GPU;
+* **verl, OpenRLHF**: frameworks for large-scale reinforcement learning that integrate inference engines and distributed training;
+* **DeepSpeed, Megatron**: low-level distributed training frameworks.
 
-这些工具更新很快，选择时应当关注活跃程度和对新算法的支持。
+PyTorch's official torchtune is no longer actively maintained (its documentation says development wound down in 2025), so it is not recommended for new projects. These tools update quickly, so when
+choosing, look at how active they are and how well they support new algorithms.
 
-### 评估
+### Evaluation
 
-微调后的模型，评估的维度比基座模型丰富得多：
+A fine-tuned model is evaluated along many more dimensions than a base model:
 
-* **指令遵循**：IFEval 用可自动检查的约束评测，MT-Bench、AlpacaEval、Arena-Hard 用强模型当判官打分；
-* **人类偏好**：LMArena 之类的平台让用户对匿名模型的回答投票，得到排名；
-* **推理**：AIME、MATH-500 等数学题，GPQA 等科学问答；
-* **代码**：HumanEval、LiveCodeBench，以及 SWE-bench Verified 这样修复真实代码仓库缺陷的评测；
-* **智能体和工具使用**：BFCL 评测函数调用，τ-bench、Terminal-Bench 等评测多轮任务；
-* **安全**：有害请求的拒答率、越狱攻击下的稳健性，以及不应拒绝的请求是否被过度拒绝。
+* **Instruction following**: IFEval evaluates with automatically checkable constraints, while MT-Bench, AlpacaEval, and Arena-Hard use a strong model as the judge;
+* **Human preference**: platforms such as Arena (formerly LMArena) let users vote on the responses of anonymous models to produce a ranking;
+* **Reasoning**: math problems such as AIME and MATH-500, and science question answering such as GPQA;
+* **Code**: HumanEval, LiveCodeBench, and evaluations such as SWE-bench Verified that fix bugs in real code repositories;
+* **Agents and tool use**: BFCL evaluates function calling, and τ-bench and Terminal-Bench evaluate multi-turn tasks;
+* **Safety**: the refusal rate for harmful requests, robustness under jailbreak attacks, and whether requests that should not be refused are over-refused.
 
-评估本身也有陷阱：判官模型的偏差、基准的污染和饱和，以及训练中奖励黑客——在优化的指标上进步，
-真实质量却没有提升。因此评估应当使用多个互补的指标，并且尽量加入人工检查。
+Evaluation has its own pitfalls: biases of judge models, contamination and saturation of benchmarks, and reward hacking in training, where the optimized metric improves but the real quality does not.
+So evaluation should use multiple complementary metrics and include human inspection wherever possible.
 
 ---
 
-本章节，我们梳理了微调领域的主流技术：
+In this chapter, we surveyed the mainstream techniques in fine-tuning:
 
-* **监督微调**：高质量、多样的指令数据，对话模板，损失掩码，继续预训练；
-* **参数高效**：LoRA、QLoRA，用很少的可训练参数达到接近全参数微调的效果；
-* **偏好对齐**：RLHF、DPO 及其变体，在线偏好优化，AI 反馈；
-* **推理能力**：RLVR、GRPO 及其改进，DeepSeek-R1 的流程，过程奖励；
-* **迁移与融合**：知识蒸馏、模型合并；
-* **系统与评估**：显存优化、强化学习的训练系统、多维度的评估。
+* **Supervised fine-tuning**: high-quality, diverse instruction data, chat templates, loss masks, continued pre-training;
+* **Parameter efficiency**: LoRA and QLoRA, which reach results close to full-parameter fine-tuning with very few trainable parameters;
+* **Preference alignment**: RLHF, DPO and its variants, online preference optimization, AI feedback;
+* **Reasoning ability**: RLVR, GRPO and its improvements, the DeepSeek-R1 pipeline, process rewards;
+* **Transfer and fusion**: knowledge distillation, model merging;
+* **Systems and evaluation**: memory optimization, training systems for reinforcement learning, multi-dimensional evaluation.
 
-我们从零实现的 SFT 和 DPO，是这条链路的起点：SFT 用示范教会模型格式，DPO 用比较教会模型偏好。
-而强化学习让模型从“模仿人类的回答”，走向“通过试错自己找到解法”，这是当前大模型能力提升最快的方向之一。
+The SFT and DPO we implemented from scratch are the starting point of this chain: SFT teaches the model the format through demonstrations, and DPO teaches the model preferences through comparisons.
+Reinforcement learning moves the model from "imitating human responses" to "finding solutions by trial and error", which is one of the fastest-improving directions of LLM capability today.
+
+## References
+
+* Zhou et al., *LIMA: Less Is More for Alignment*, 2023.
+* Wang et al., *Self-Instruct: Aligning Language Models with Self-Generated Instructions*, 2022.
+* Wei et al., *Finetuned Language Models Are Zero-Shot Learners*, 2021.
+* Ouyang et al., *Training Language Models to Follow Instructions with Human Feedback*, 2022.
+* Hu et al., *LoRA: Low-Rank Adaptation of Large Language Models*, 2021.
+* Dettmers et al., *QLoRA: Efficient Finetuning of Quantized LLMs*, 2023.
+* Schulman et al., *LoRA Without Regret*, Thinking Machines Lab, 2025.
+* Schulman et al., *Proximal Policy Optimization Algorithms*, 2017.
+* Rafailov et al., *Direct Preference Optimization: Your Language Model Is Secretly a Reward Model*, 2023.
+* Ahmadian et al., *Back to Basics: Revisiting REINFORCE Style Optimization for Learning from Human Feedback in LLMs*, 2024.
+* Bai et al., *Constitutional AI: Harmlessness from AI Feedback*, 2022.
+* Cui et al., *UltraFeedback: Boosting Language Models with High-quality Feedback*, 2023.
+* Yuan et al., *Self-Rewarding Language Models*, 2024.
+* Lambert et al., *Tülu 3: Pushing Frontiers in Open Language Model Post-Training*, 2024.
+* Shao et al., *DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models*, 2024.
+* DeepSeek-AI, *DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning*, 2025.
+* Liu et al., *Understanding R1-Zero-Like Training: A Critical Perspective*, 2025.
+* Yu et al., *DAPO: An Open-Source LLM Reinforcement Learning System at Scale*, 2025.
+* Zheng et al., *Group Sequence Policy Optimization*, 2025.
+* MiniMax, *MiniMax-M1: Scaling Test-Time Compute Efficiently with Lightning Attention*, 2025.
+* Yao et al., *Your Efficient RL Framework Secretly Brings You Off-Policy RL Training*, 2025.
+* Yue et al., *Does Reinforcement Learning Really Incentivize Reasoning Capacity in LLMs Beyond the Base Model?*, 2025.
+* Lightman et al., *Let's Verify Step by Step*, 2023.
+* Meta, *The Llama 3 Herd of Models*, 2024.
+* Qwen Team, *Qwen3 Technical Report*, 2025.
+* Agarwal et al., *On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes*, 2023.
+* Lu et al., *On-Policy Distillation*, Thinking Machines Lab, 2025.
+* Wortsman et al., *Model Soups: Averaging Weights of Multiple Fine-tuned Models Improves Accuracy without Increasing Inference Time*, 2022.
+* Ilharco et al., *Editing Models with Task Arithmetic*, 2022.
+* Yadav et al., *TIES-Merging: Resolving Interference When Merging Models*, 2023.
+* Yu et al., *Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch*, 2023.
+* Rajbhandari et al., *ZeRO: Memory Optimizations Toward Training Trillion Parameter Models*, 2019.
+* Zhou et al., *Instruction-Following Evaluation for Large Language Models*, 2023.
+* Zheng et al., *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*, 2023.
