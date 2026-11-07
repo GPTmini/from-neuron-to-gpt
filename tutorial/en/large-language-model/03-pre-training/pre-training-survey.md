@@ -1,453 +1,435 @@
-# 预训练技术综述
+# A Survey of Pre-training Techniques
 
-前面三个部分，我们一步步搭建并预训练了一个 GPT 模型：
+Over the previous ten chapters, we built and pre-trained a GPT model step by step:
 
-* 嵌入层：（词元嵌入、位置嵌入）把文字变成向量；
-* 自注意力：（因果、加权、多头）让词元之间互相理解；
-* 预训练：（残差连接、层归一化、随机失活）把模型堆深、训练稳。
+* Embedding layers (token embedding and position embedding, Chapters 1 to 2): turn text into vectors;
+* Self-attention (causal, weighted, and multi-head, Chapters 3 to 6): let tokens understand each other;
+* Pre-training (residual connection, layer normalization, and dropout, Chapters 7 to 10): stack the model deeper and train it stably.
 
-整体来讲，我们实现的基本是 GPT-2 的架构（GPT-3 在此基础上主要是放大了规模，并在部分层使用了稀疏注意力）。
-但是和今天的主流大模型（Llama、Qwen、DeepSeek、Gemma 等）相比，从分词到注意力，从模块细节到训练数据，
-几乎每个环节都已经发生了很大的变化。
+Overall, what we implemented is basically the GPT-2 architecture (GPT-3 mainly scaled it up and used sparse attention in some layers). But compared with today's mainstream large models (Llama, Qwen, DeepSeek, Gemma, and others), almost every part has changed a great deal, from tokenization to attention, and from module details to training data.
 
-这些新的大模型架构，已经很难使用小型的代码和数据展示。本章我们将梳理预训练阶段的前沿技术，建立一张完整的技术地图。
-感兴趣的读者可以继续深入研究。
+These new architectures are hard to demonstrate with small code and small data. In this chapter we survey the cutting-edge techniques of the pre-training stage and draw a complete technology map. Interested readers can dig deeper from here.
 
-## 技术对比
+> Large model technology evolves quickly; the content of this chapter is current as of November 2026.
 
-通过一张对比表，我们来比较一下我们实现的 GPT 和现代主流大模型有哪些不同：
+## Technology comparison
 
-| 组件      | 我们的 GPT           | 现代主流大模型                                 |
-|---------|-------------------|-----------------------------------------|
-| 分词      | 字符级，词表 65 左右      | 字节级 BPE，词表 3 万到 25 万                    |
-| 位置编码    | 可训练的绝对位置嵌入        | 旋转位置编码（RoPE）                            |
-| 注意力     | 多头注意力（MHA），全部是全局注意力 | 分组查询注意力（GQA）或多头潜在注意力（MLA）；局部与全局交替、稀疏注意力，部分模型混入线性注意力 |
-| 归一化     | 层归一化（LayerNorm），前置 | 均方根归一化（RMSNorm），前置，部分模型加 QK-Norm        |
-| 前馈网络    | GELU，隐藏层 4 倍      | SwiGLU，隐藏层约 2.7 到 3.5 倍，或者混合专家（MoE）    |
-| 线性层偏置   | 有                 | 通常没有                                    |
-| 随机失活    | 有                 | 通常没有                                    |
-| 输入输出嵌入  | 各自独立              | 小模型常常共享，大模型通常独立                         |
-| 数值精度    | FP32              | BF16 混合精度，FP8，部分探索 FP4                  |
-| 优化器     | AdamW             | AdamW，部分模型使用 Muon                       |
-| 学习率调度   | 预热 + 余弦衰减         | 预热 + 余弦衰减，或者预热-稳定-衰减（WSD）               |
-| 上下文长度   | 256               | 128K 到 1M                               |
-| 训练数据    | 约 110 万字符的莎士比亚剧本  | 数万亿词元，经过清洗、去重、配比                        |
+A comparison table shows how the GPT we implemented differs from modern mainstream large models:
 
-## 分词
+| Component | Our GPT | Modern mainstream large models |
+|---|---|---|
+| Tokenization | Character-level, vocabulary of about 65 | Byte-level BPE, vocabulary of 30,000 to 250,000 |
+| Position encoding | Trainable absolute position embedding | Rotary position embedding (RoPE) |
+| Attention | Multi-head attention (MHA), all global | Grouped-query attention (GQA) or multi-head latent attention (MLA); alternating local and global layers, sparse attention, and in some models linear attention |
+| Normalization | Layer normalization (LayerNorm), pre-norm | Root mean square normalization (RMSNorm), pre-norm, and QK-Norm in some models |
+| Feed-forward network | GELU, hidden layer 4× | SwiGLU, hidden layer about 2.7× to 3.5×, or mixture of experts (MoE) |
+| Linear layer bias | Yes | Usually none |
+| Dropout | Yes | Usually none |
+| Input and output embeddings | Independent | Often shared in small models, usually independent in large ones |
+| Numerical precision | FP32 | BF16 mixed precision, FP8, FP4 explored in some cases |
+| Optimizer | AdamW | AdamW, Muon in some models |
+| Learning rate schedule | Warmup + cosine decay | Warmup + cosine decay, or warmup-stable-decay (WSD) |
+| Context size | 256 | 128K to 1M |
+| Training data | About 1.1 million characters of Shakespeare's plays | Trillions of tokens, cleaned, deduplicated, and mixed |
 
-### 字符级分词
+## Tokenization
 
-我们使用的是**字符级分词**：每个字符是一个词元，词表只有几十个。简单，但是代价也大：
+### Character-level tokenization
 
-* **编码序列太长**：编码后词元序列太长，而注意力的计算量是序列长度的平方；
-* **语义密度低**：单个词元几乎不携带语义信息，模型要先花很多层的学习才能正确地把字符拼成词。
+We use **character-level tokenization**: each character is a token, and the vocabulary has only a few dozen entries. It is simple, but the cost is high:
 
-另一个极端是**词级分词**：每个单词是一个词元。序列短了，但是词表巨大，而且无法处理没见过的词
-（Out of Vocabulary，OOV），比如新造词、拼写错误、人名等。
+* **Sequences too long**: the encoded token sequence is very long, while the computation of attention is proportional to the square of the sequence length;
+* **Low semantic density**: a single token carries almost no semantic information, and the model has to spend many layers of learning to assemble characters into words correctly.
 
-### 子词分词
+The other extreme is **word-level tokenization**: each word is a token. Sequences get shorter, but the vocabulary becomes huge, and words that were never seen (out of vocabulary, OOV) cannot be handled, such as newly coined words, misspellings, and personal names.
 
-**子词分词**（Subword Tokenization）是折中方案：常见的词保持完整，罕见的词拆分成更小的片段。主要有三种算法：
+### Subword tokenization
 
-* **BPE**（Byte Pair Encoding）：从最小的单元开始，不断把语料中出现最频繁的相邻词元合并成新的词元，
-直到词表规模达到预定的大小。GPT、Llama、Qwen 等采用；
-* **WordPiece**：和 BPE 类似，但是合并时选择能让语言模型似然提升最大的词元对。BERT 采用；
-* **Unigram**：反过来，从一个很大的候选词表开始，不断删除对似然贡献最小的词元。T5 等采用。
+**Subword tokenization** is the compromise: common words are kept whole, and rare words are split into smaller pieces. There are three main algorithms:
 
-训练分词器常用 **SentencePiece**（直接在原始文本上训练，把空格也当作普通字符，适合中文、日文等没有空格的语言）
-和 Hugging Face 的 **tokenizers**。
+* **BPE** (Byte Pair Encoding): start from the smallest units and keep merging the most frequent adjacent pair of tokens in the corpus into a new token, until the vocabulary reaches a preset size. Used by GPT, Llama, Qwen, and others;
+* **WordPiece**: similar to BPE, but when merging it picks the pair that increases the likelihood of the language model the most. Used by BERT;
+* **Unigram**: the other way around: start from a very large candidate vocabulary and keep deleting the token that contributes least to the likelihood. Used by T5 and others.
 
-### 字节级 BPE
+Tokenizers are commonly trained with SentencePiece (which trains directly on raw text and treats spaces as ordinary characters, suitable for languages without spaces such as Chinese and Japanese) and Hugging Face's tokenizers library.
 
-目前最主流的方案是**字节级 BPE**（Byte-level BPE）：合并从 256 个字节开始，而不是从字符开始。
-任何文本都可以表示成字节序列，所以不会出现 OOV，也不需要为各种语言的字符预留位置。GPT-2 开始使用。
+### Byte-level BPE
 
-BPE 分词前通常还有一个**预分词**（Pre-tokenization）步骤：用正则表达式先把文本粗略地切分成单词、数字、标点等，
-再在每个片段内部做 BPE，避免合并跨越单词的天然边界。OpenAI 的 tiktoken 是常用的高速编码库，但它只负责编码，不负责训练分词器。
+The most mainstream scheme today is **byte-level BPE**: merging starts from the 256 bytes instead of from characters. Any text can be represented as a byte sequence, so OOV never occurs, and there is no need to reserve room for the characters of various languages. It has been used since GPT-2.
 
-### 词表大小
+Before BPE tokenization there is usually also a **pre-tokenization** step: a regular expression first roughly splits the text into words, numbers, punctuation, and so on, and BPE is then applied inside each piece, which avoids merges that cross the natural boundaries of words. OpenAI's tiktoken is a commonly used fast encoding library, but it only encodes and does not train tokenizers.
 
-词表大小是一个权衡的结果：
+### Vocabulary size
 
-* **词表更大**：同样的文本编码后，词元序列更短，注意力和推理成本更低。对中文、代码等非英语文本优势尤其明显。
-但是嵌入层和输出层的参数更多，低频词出现机会较少，训练不充分；
-* **词表更小**：正好相反，嵌入层和输出层参数少，但是序列更长。
+Vocabulary size is a trade-off:
 
-典型的词表大小：
+* **Larger vocabulary**: the same text is encoded into a shorter token sequence, which lowers the cost of attention and inference. The advantage is especially clear for Chinese, code, and other non-English text. But the embedding layer and the output layer have more parameters, and low-frequency tokens appear less often and are trained insufficiently;
+* **Smaller vocabulary**: exactly the opposite: the embedding layer and the output layer have fewer parameters, but sequences are longer.
 
-* **GPT-2**：约 5 万；
-* **Llama 2**：约 3.2 万；
-* **Llama 3**：约 12.8 万；
-* **Qwen3**：约 15 万；
-* **Gemma**：约 25.6 万。
+Typical vocabulary sizes:
 
-趋势是越来越大，尤其是为了更好地支持多语言。
+* GPT-2: about 50,000
+* Llama 2: about 32,000
+* Llama 3: about 128,000
+* Qwen3: about 150,000
+* Gemma: about 256,000
 
-### 特殊词元
+The trend is toward ever larger vocabularies, especially to support more languages better.
 
-除了文本片段，词表中还有一些**特殊词元**（Special Token）：序列开始和结束标记、填充标记，以及对话中区分系统、用户、助手角色的标记。
-结束标记尤其重要：模型需要靠它学会“什么时候停下来”。我们在微调章节里会看到它们的用法。
+### Special tokens
 
-### 多模态词元
+Besides text pieces, the vocabulary also contains some **special tokens**: tokens marking the beginning and end of a sequence, padding tokens, and tokens that distinguish the system, user, and assistant roles in a conversation. The end token is especially important: the model relies on it to learn "when to stop". We will see how they are used in the fine-tuning chapters.
 
-多模态模型同样需要把图像、音频变成词元序列：
+### Multimodal tokens
 
-* **连续块嵌入**：例如 ViT，把图像切成块（Patch），每块经过线性投影，直接作为输入向量；
-* **离散视觉词元**：例如 VQ-VAE，把图像量化成离散编码，和文字词元放进同一个词表。
+Multimodal models likewise need to turn images and audio into token sequences:
 
-### 嵌入共享
+* **Continuous patch embeddings**: for example ViT, which cuts an image into patches, applies a linear projection to each patch, and uses the results directly as input vectors;
+* **Discrete visual tokens**: for example VQ-VAE, which quantizes an image into discrete codes and puts them in the same vocabulary as text tokens.
 
-我们的模型中，嵌入层的**词元嵌入**权重和输出层的线性层权重是两个独立的矩阵。
-但是它们的形状正好相同：都是 `(词表大小, 嵌入大小)`（我们的线性层权重按 `(输出, 输入)` 存放）。
+### Embedding sharing
 
-**嵌入共享**（Weight Tying）让两者使用同一份参数。GPT-2 就是这样做的。在词表很大、模型较小的时候，
-嵌入层和输出层参数占比非常可观，所以小模型（比如 Gemma、Llama 3.2 的小尺寸、Qwen 的小尺寸等）常常采用；
-模型变大以后，这部分参数占比很小，通常不再共享。
+In our model, the weights of the **token embedding** in the embedding layer and the weights of the linear layer in the output layer are two independent matrices. But their shapes happen to be the same: both are `(vocabulary size, embedding size)` (the weights of our linear layer are stored as `(output, input)`).
 
-## 位置编码
+**Weight tying** makes the two use the same set of parameters. GPT-2 does exactly this. When the vocabulary is large and the model is small, the embedding and output layers take a considerable share of the parameters, so small models (such as Gemma, the small sizes of Llama 3.2, and the small sizes of Qwen) often adopt it; once the model gets larger, this part is a small share and is usually no longer shared.
 
-### 绝对位置嵌入
+## Position encoding
 
-我们使用的是**可训练的绝对位置嵌入**：每个位置有一个独立的位向量，加到词向量上。它有两个局限：
+### Absolute position embedding
 
-* **长度固定**：超出上下文尺寸的位置没有对应的位向量，无法处理超出上下文窗口的文本；
-* **绝对位置**：模型学到的是绝对位置，而语言更关心的是词元之间的**相对距离**。
+We use a **trainable absolute position embedding**: each position has its own position vector, which is added to the word vector. It has two limitations:
 
-### 位置编码的演进
+* **Fixed length**: positions beyond the context size have no corresponding position vector, so text longer than the context size cannot be handled;
+* **Absolute position**: what the model learns is the absolute position, whereas language cares more about the relative distance between tokens.
 
-* **正弦位置编码**（Sinusoidal）：Transformer 论文的原始方案。用不同频率的正弦、余弦函数生成位向量，不需要训练；
-* **可训练位置嵌入**：GPT-2 的方案，也是我们实现的方案；
-* **ALiBi**：在注意力分数上直接减去一个和词元距离成正比的值，每个头使用不同的斜率。不需要训练，也能处理更长的序列；
-* **RoPE**：旋转位置编码，目前最主流的方案；
-* **NoPE**：完全不使用位置编码，依靠因果掩码隐含的位置信息。部分模型（例如 SmolLM3）在一部分层里不加位置编码。
+### The evolution of position encoding
 
-### 旋转位置编码
+* **Sinusoidal encoding**: the original scheme of the Transformer paper. It generates position vectors with sine and cosine functions of different frequencies and needs no training;
+* **Trainable position embedding**: the scheme of GPT-2, and also the one we implemented;
+* **ALiBi**: directly subtracts a value proportional to the token distance from the attention scores, with a different slope for each head. It needs no training and can handle longer sequences;
+* **RoPE**: rotary position embedding, the most mainstream scheme today;
+* **NoPE**: no position encoding at all, relying on the position information implied by the causal mask. Some models (for example SmolLM3) use no position encoding in some of their layers.
 
-**旋转位置编码**（Rotary Position Embedding，RoPE）不是把位向量加到词向量上，而是通过旋转向量来表达位置。
+### Rotary position embedding
 
-RoPE 把**查向量**（Query，$q$）和**键向量**（Key，$k$）每两个维度分成一组，把每组看作二维平面上的一个向量，
-旋转一个与词元位置 $m$ 成正比的角度 $m\theta_i$，不同的组使用不同的频率 $\theta_i$。
-经过旋转后，位置为 $m$ 的查向量与位置为 $n$ 的键向量做点积运算时，其结果只取决于两者的相对距离，
-而与它们的绝对位置 $m$、$n$ 无关：
+**Rotary position embedding** (RoPE) does not add a position vector to the word vector, but expresses position by rotating vectors.
+
+RoPE divides the dimensions of the query vector ($q$) and the key vector ($k$) into groups of two, treats each group as a vector in a two-dimensional plane, and rotates it by an angle $m\theta_i$ proportional to the token position $m$, with different groups using different frequencies $\theta_i$. After the rotation, when the query vector at position $m$ and the key vector at position $n$ take a dot product, the result depends only on their relative distance and has nothing to do with their absolute positions $m$ and $n$:
 
 $$
 (R_m q)^\top (R_n k) = q^\top R_{n-m} k
 $$
 
-这种设计让模型天然具备相对位置感知能力，也不需要再把位向量加入词向量。Llama、Qwen、DeepSeek、Gemma、Mistral 等
-几乎所有主流开源大模型都采用 RoPE。
+Where:
 
-### 上下文扩展
+* $R_m$, $R_n$: the rotation matrices for positions $m$ and $n$, and $R_{n-m}$ is the rotation matrix for the relative distance $n - m$;
+* $q$, $k$: the query vector at position $m$ and the key vector at position $n$;
+* $\top$: matrix transpose.
 
-训练时的上下文长度往往远小于最终支持的长度，因为长序列的训练成本很高。常见的做法是：
+This design gives the model a natural sense of relative position, and there is no need to add a position vector to the word vector any more. The vast majority of mainstream open-source large models adopt RoPE, including Llama, Qwen, DeepSeek, Gemma, and Mistral.
 
-* 在预训练的大部分阶段使用较短的序列（比如 4K），最后用少量长文本继续训练，把上下文扩展到 32K、128K 甚至更长；
-* 同时调整 RoPE 的频率：**位置插值**把位置压缩到训练时见过的范围内；**NTK-aware** 缩放、**YaRN** 对不同频率区别处理；
-也可以直接增大 RoPE 的基础频率（Qwen3 从 10,000 提高到 1,000,000）。
+### Context extension
 
-## 注意力
+The context size during training is often far smaller than the final supported size, because training on long sequences is expensive. The common practice is:
 
-自注意力的计算量和注意力分数矩阵的大小，都和序列长度 $n$ 的平方成正比：$O(n^2d)$。上下文从 4K 扩展到 128K，
-注意力部分的计算量增加了约 1000 倍。
+* use shorter sequences (for example 4K) for most of the pre-training, and finally continue training with a small amount of long text to extend the context to 32K, 128K, or even longer;
+* adjust the frequencies of RoPE at the same time: **position interpolation** compresses the positions into the range seen during training; **NTK-aware** scaling and **YaRN** treat different frequencies differently; one can also directly increase the base frequency of RoPE (Qwen3 raised it from 10,000 to 1,000,000).
 
-这是预训练中注意力研究最核心的驱动力：怎么让注意力**更快**、**更省**，或者干脆**绕开**平方复杂度。
+## Attention
 
-### 减少键值头
+Both the computation of self-attention and the size of the attention score matrix are proportional to the square of the sequence length $n$: $O(n^2d)$. When the context grows from 4K to 128K, the computation of the attention part increases about 1000 times.
 
-标准的**多头注意力**（Multi-Head Attention，MHA），每个 query 头对应一个独立的 key 和 value。
-表达能力强，但是推理时需要缓存的 key 和 value 太多，显存和带宽消耗大。让多个头共享 key 和 value，缓存就能成倍缩小：
+This is the core driver of attention research in pre-training: how to make attention faster and cheaper, or to bypass the quadratic complexity altogether.
 
-* **MQA**（Multi-Query Attention）：所有 query 头共享一组 key 和 value；
-* **GQA**（Grouped-Query Attention）：query 头分组，每组共享一组 key 和 value；
-* **MLA**（Multi-head Latent Attention）：把 key 和 value 压缩成低维的**潜向量**（Latent），缓存的是潜向量。
+### Reducing key-value heads
 
-这些算法的主要动机是减少推理时的 KV 缓存，但是都改变了模型结构，通常在预训练阶段就要确定下来。
-也有从 MHA 模型出发、用少量继续训练转换成 GQA 的做法。目前主流大模型大多采用 GQA，DeepSeek、Kimi 等采用 MLA。
+In standard multi-head attention (MHA), each query head has its own set of keys and values. It is expressive, but at inference time too many keys and values need to be cached, which costs a lot of GPU memory and bandwidth. Letting several heads share keys and values shrinks the cache by a multiple:
 
-### 高效注意力计算
+* **MQA** (Multi-Query Attention): all query heads share one set of keys and values;
+* **GQA** (Grouped-Query Attention): query heads are divided into groups, and each group shares one set of keys and values;
+* **MLA** (Multi-head Latent Attention): compresses keys and values into low-dimensional **latent vectors**, and the latent vectors are cached.
 
-标准注意力需要把完整的注意力分数矩阵写入显存，再读出来做 Softmax 和加权求和，大量时间花在数据搬运上。
+The main motivation of these algorithms is to reduce the key-value cache (KV cache) at inference time, but they all change the structure of the model, and are usually fixed during pre-training. There are also approaches that start from an MHA model and convert it to GQA with a small amount of continued training. Most mainstream large models today adopt GQA, while DeepSeek, Kimi, and others adopt MLA.
 
-**FlashAttention** 通过**分块**（Tiling）的方式，把 Q、K、V 切成小块，在高速缓存中完成 Softmax 和加权求和，
-不需要把完整的注意力矩阵写入显存，将这部分的显存占用从 $O(n^2)$ 降到了 $O(n)$，速度也显著提高。
-它的输出和标准注意力一致，是精确计算，不是近似。FlashAttention 之后又有针对新一代 GPU 架构的改进版本。
-现在主流大模型的预训练几乎都默认启用它。
+### Efficient attention computation
 
-### 稀疏注意力
+Standard attention has to write the complete attention score matrix to GPU memory and read it back for the Softmax and the weighted sum, so a lot of time is spent moving data.
 
-注意力矩阵的大部分权重其实接近 0，因此可以选择只计算最重要的位置：
+**FlashAttention** uses **tiling**: it cuts the queries, keys, and values into small blocks and completes the Softmax and the weighted sum in the fast cache, without writing the complete attention matrix to GPU memory. This reduces the memory use of this part from $O(n^2)$ to $O(n)$ and also speeds things up significantly. Its output is identical to standard attention: it is exact computation, not an approximation. Improved versions for newer GPU architectures have followed FlashAttention. Today the pre-training of mainstream large models almost always enables it by default.
 
-* **滑动窗口注意力**：每个词元只关注最近的若干个词元；
-* **全局词元**：设置少数词元可以关注所有词元，也可以被所有词元关注；
-* **局部和全局交替**：多数层使用滑动窗口，少数层使用完整注意力。例如 Gemma 3 每 5 个局部注意力层配 1 个全局层；
-* **可训练的稀疏模式**：让模型自己学习关注哪些词元。DeepSeek 的稀疏注意力（DSA）用一个轻量的索引器为每个词元挑选最重要的若干个位置；
-DeepSeek-V4 把它和沿词元维度的压缩结合起来，把 100 万词元的上下文作为默认配置。
+### Sparse attention
 
-### 线性注意力和状态空间模型
+Most of the weights in the attention matrix are actually close to 0, so we can choose to compute only the most important positions:
 
-另一条路是彻底**绕开**平方复杂度。**线性注意力**和**状态空间模型**（State Space Model，比如 Mamba）把注意力改写成递推形式：
-用一个固定大小的状态来概括历史，而不是不断增长的 KV 缓存。计算量随序列长度线性增长，推理时的显存占用也是恒定的。
+* **Sliding window attention**: each token attends only to the nearest several tokens;
+* **Global tokens**: a few tokens can attend to all tokens and be attended to by all tokens;
+* **Alternating local and global layers**: most layers use sliding windows, and a few use full attention. For example, Gemma 3 pairs every 5 local attention layers with 1 global layer;
+* **Trainable sparse patterns**: let the model learn which tokens to attend to. DeepSeek Sparse Attention (DSA) uses a lightweight indexer to pick the most important positions for each token; DeepSeek-V4 combines it with compression along the token dimension and makes a context of 1 million tokens its default configuration.
 
-但是压缩成固定大小的状态是有代价的：在需要精确回忆某个细节的任务上，纯线性模型弱于完整注意力。
-所以 2025 年以来，更常见的做法是**混合架构**：多数层使用线性注意力或状态空间层，少数层保留完整注意力，
-例如 Qwen3-Next（Gated DeltaNet 与门控注意力）、Kimi Linear（线性注意力与 MLA）、Nemotron 3（Mamba 层、注意力层与 MoE）。
+### Linear attention and state space models
 
-### 注意力的稳定性
+Another path is to **bypass** the quadratic complexity entirely. **Linear attention** and **state space models** (SSM, such as Mamba) rewrite attention in a recurrent form: they summarize the history with a fixed-size state instead of an ever-growing KV cache. The computation grows linearly with the sequence length, and the memory use at inference time is constant.
 
-**QK-Norm** 在计算注意力分数之前，先对 Q 和 K 做归一化，防止分数过大导致 Softmax 饱和，使训练更稳定。
-Qwen3、Gemma 3、OLMo 2 等模型都采用了它。
+But compressing into a fixed-size state has a price: on tasks that need to recall a precise detail, pure linear models are weaker than full attention. So since 2025 a **hybrid architecture** has become the more common practice: most layers use linear attention or state space layers, and a few keep full attention. Examples are Qwen3-Next (Gated DeltaNet and gated attention), Kimi Linear (linear attention and MLA), and Nemotron 3 (Mamba layers, attention layers, and MoE).
 
-## 转换器模块的演进
+### Attention stability
 
-我们实现的 Transformer 模块是：归一化 → 注意力 → 随机失活 → 残差连接；归一化 → 前馈网络 → 随机失活 → 残差连接。
-现代大模型在每个子模块都做了改进。
+**QK-Norm** normalizes the query and the key before computing the attention scores, which prevents scores that are too large from saturating the Softmax and makes training more stable. Qwen3, Gemma 3, OLMo 2, and other models all adopt it.
 
-### 归一化
+## The evolution of the Transformer block
 
-* **均方根归一化**（Root Mean Square Normalization，RMSNorm）是层归一化的一种简化版：省略了“减去均值”这一步，
-只用均方根做缩放，并且只保留可学习的缩放因子 $\gamma$，去掉平移因子 $\beta$。
-计算量更小，效果和层归一化相当，是目前几乎所有主流大模型的选择；
+The Transformer block we implemented is: normalization → attention → dropout → residual connection; normalization → feed-forward network → dropout → residual connection. Modern large models have improved every submodule.
 
-* **前置归一化**：Transformer 论文是把归一化放在残差连接之后。GPT-2 改成放在子层之前（也就是我们采用的做法），
-训练更稳定，因为残差通道保持干净。个别模型（如 OLMo 2）把归一化放在子层输出之后，也是为了训练稳定。
+### Normalization
 
-### 前馈网络
+* Root mean square normalization (RMSNorm) is a simplified version of layer normalization: it omits the step of "subtracting the mean", scales with only the root mean square, and keeps only the learnable scaling factor $\gamma$ while dropping the shifting factor $\beta$. It is cheaper to compute and works as well as layer normalization, and it is the choice of almost all mainstream large models;
+* **Pre-norm**: the Transformer paper places the normalization after the residual connection. GPT-2 moved it before the sublayer (which is also what we adopted), which makes training more stable because the residual channel stays clean. Some models (such as OLMo 2) place the normalization after the output of the sublayer, also for training stability.
 
-* **门控线性单元**（GLU）：前馈网络不再是“线性 → 激活 → 线性”，而是增加一个门控机制：
+### Feed-forward network
+
+The **gated linear unit** (GLU): the feed-forward network is no longer "linear → activation → linear", but adds a gating mechanism:
 
 $$
 \text{FFN}(x) = \left(\text{Swish}(x W_1) \odot x W_3\right) W_2
 $$
 
-其中 $\text{Swish}(x) = x \cdot \sigma(x)$。
+Where:
 
-用激活后的一路，去“门控”线性的另一路。这种结构称为 **SwiGLU**，在相同参数量下效果稳定地优于 GELU，成为多数主流大模型的标配；
+* $W_1$, $W_3$: the two weight matrices that project the input to the hidden layer;
+* $W_2$: the weight matrix that projects the hidden layer back to the embedding size;
+* $\odot$: element-wise multiplication;
+* $\text{Swish}(x) = x \cdot \sigma(x)$, where $\sigma$ is the Sigmoid function.
 
-* **隐藏层尺寸**：SwiGLU 有 3 个权重矩阵，为了保持参数量不变，隐藏层尺寸从 4 倍缩小为约 8/3 倍；
-实际模型会根据硬件对齐等因素在此基础上调整；
-* **混合专家**（Mixture of Experts，MoE）：把前馈网络替换成多个**专家**（Expert）和一个**路由器**（Router）。
-路由器为每个词元选出得分最高的 $k$ 个专家，只有被选中的专家参与计算。MoE 让模型的容量由总参数决定，
-而每个词元的计算量只由激活参数决定。
+One path, after the activation, "gates" the other, linear path. This structure is called **SwiGLU**; at the same parameter count it performs consistently better than GELU and has become standard in most mainstream large models.
 
-MoE 的几个设计要点：
+The feed-forward network has two more improvements:
 
-* **细粒度专家和共享专家**：把专家切得更小、数量更多，并保留一两个所有词元都会经过的共享专家；
-* **负载均衡**：需要防止少数专家被过度使用，常用辅助损失，也有不用辅助损失、直接调整路由偏置的方法；
-* **规模对比**：DeepSeek-V3 总参数 671B，每个词元激活 37B；Qwen3-235B-A22B 每层 128 个专家、激活 8 个；
-DeepSeek-V4-Pro 总参数 1.6T、激活 49B。
+* **Hidden layer size**: SwiGLU has 3 weight matrices, so to keep the parameter count unchanged the hidden layer shrinks from 4× to about 8/3×, and real models adjust it from there according to factors such as hardware alignment;
+* **Mixture of experts** (MoE): replaces the feed-forward network with multiple **experts** and a **router**. The router selects the $k$ highest-scoring experts for each token, and only the selected experts take part in the computation. MoE lets the capacity of the model be determined by the total parameters, while the computation per token is determined only by the activated parameters.
 
-### 残差连接
+Several design points of MoE:
 
-标准的残差连接只有一条“主干道”。**超连接**（Hyper-Connections）把残差流加宽成多条并行的通道，并让它们之间可以互相混合，
-增强表达能力。但是不加约束的混合会让信号在深层网络中被放大，训练不稳定。DeepSeek 提出的 **mHC**
-（Manifold-Constrained Hyper-Connections）把混合矩阵约束在特定的流形上，恢复了残差连接的恒等映射性质。
-这是目前仍在探索中的方向。
+* **Fine-grained experts and shared experts**: cut the experts smaller and make them more numerous, and keep one or two shared experts that every token passes through;
+* **Load balancing**: a few experts must be prevented from being overused; an auxiliary loss is commonly used, and there are also methods that need no auxiliary loss and adjust the routing bias directly;
+* **Scale comparison**: DeepSeek-V3 has 671B total parameters and activates 37B per token; Qwen3-235B-A22B has 128 experts per layer and activates 8; DeepSeek-V4-Pro has 1.6T total parameters and activates 49B.
 
-### 随机失活
+### Residual connection
 
-我们在模型中使用 **Dropout** 防止过拟合。但是现代大模型的预训练通常不使用**随机失活**：
-训练数据通常只过一遍，模型处在欠拟合而不是过拟合的状态，随机失活只会拖慢收敛。
+A standard residual connection has only one "main road". **Hyper-connections** widen the residual stream into several parallel channels and let them mix with each other, which strengthens expressiveness. But unconstrained mixing amplifies the signal in deep networks and makes training unstable. The **mHC** (Manifold-Constrained Hyper-Connections) proposed by DeepSeek constrains the mixing matrix to a specific manifold, restoring the identity mapping property of the residual connection. DeepSeek-V4 has adopted mHC. This is still a direction under exploration.
 
-只有数据量不足、需要重复训练多个轮次的场景（比如我们的模型），随机失活才比较有价值。
-大模型预训练中的**权重衰减**，主要作用也不是防止过拟合，而是配合学习率调节优化的动力学。
+### Dropout
 
-### 线性层偏置
+We use dropout in our model to prevent overfitting. But the pre-training of modern large models usually does not use it: the training data usually goes through only once, the model is underfitting rather than overfitting, and dropout would only slow down convergence.
 
-现代大模型的线性层通常去掉偏置，减少参数并简化实现。个别模型曾经在注意力的 QKV 投影上保留偏置（比如 Qwen2），
-后来也去掉了（Qwen3 改用 QK-Norm 稳定训练）。
+Only when the amount of data is insufficient and several epochs of repeated training are needed (as with our model) does dropout become worthwhile. The weight decay used in large-model pre-training also does not mainly serve to prevent overfitting, but to work with the learning rate to shape the dynamics of optimization.
 
-## 训练目标
+### Linear layer bias
 
-我们训练的是最基本的**下一词元预测**：每个位置预测下一个词元。现代大模型在此基础上有一些扩展：
+The linear layers of modern large models usually drop the bias, which reduces parameters and simplifies the implementation. Some models once kept the bias in the QKV projections of attention (for example Qwen2) and later dropped it as well (Qwen3 switched to QK-Norm to stabilize training).
 
-* **中间填充**（Fill-in-the-Middle，FIM）：把文本的中间一段挖掉，让模型根据前后文补全。代码模型广泛使用，支持代码补全；
-* **多词元预测**（Multi-Token Prediction，MTP）：在主干之外增加额外的预测头，每个位置同时预测后面的多个词元。
-训练时提供更密集的学习信号，推理时还可以直接用作投机解码的草稿（见推理技术综述）。DeepSeek-V3 和 Qwen3-Next 等采用；
-* **扩散语言模型**：不再从左到右逐个生成，而是并行预测被遮蔽的词元，迭代去噪。目前质量通常落后于自回归模型，
-仍然是活跃的研究方向。
+## Training objectives
 
-## 优化
+What we train is the most basic **next-token prediction**: each position predicts the next token. Modern large models extend it in a few ways:
 
-### 优化器
+* **Fill-in-the-middle** (FIM): cut out a middle segment of the text and let the model complete it from the text before and after. Widely used by code models to support code completion;
+* **Multi-token prediction** (MTP): add extra prediction heads beside the backbone, so that each position predicts several following tokens at once. It provides a denser learning signal during training, and at inference it can also serve directly as the draft for speculative decoding (see the survey of inference techniques). Adopted by DeepSeek-V3, Qwen3-Next, and others;
+* **Diffusion language models**: instead of generating one token at a time from left to right, they predict masked tokens in parallel and denoise iteratively. Their quality currently usually lags behind autoregressive models, and they remain an active research direction.
 
-我们使用的 **AdamW**，也是目前比较常用的优化器。常见的大模型预训练配置包括：
+## Optimization
 
-* **Adam 超参数**：$\beta_1 = 0.9$，$\beta_2 = 0.95$；较小的 $\beta_2$ 让模型对近期的梯度更敏感，大规模训练更稳定；
-* **权重衰减**：通常 0.1；
-* **梯度裁剪**：全局梯度范数（Norm）裁剪到 1.0，防止偶尔出现的大梯度破坏训练的稳定。
+### Optimizers
 
-**Muon** 是近年来最受关注的 AdamW 替代方案。它只对二维的权重矩阵使用：先对动量做正交化处理，再更新参数，
-其余参数（如嵌入、归一化）仍然使用 AdamW。Muon 只保存一份动量，优化器状态比 AdamW 更省显存，样本效率也更高。
-Kimi K2（1.04T 参数、15.5T 词元）使用了它的改进版 MuonClip，GLM-4.5、GLM-5 和 DeepSeek-V4 也使用了 Muon。
+The AdamW we use is also a commonly used optimizer today. Common configurations for large-model pre-training include:
 
-### 学习率调度器
+* **Adam hyperparameters**: $\beta_1 = 0.9$, $\beta_2 = 0.95$; a smaller $\beta_2$ makes the model more sensitive to recent gradients and makes large-scale training more stable;
+* **Weight decay**: usually 0.1;
+* **Gradient clipping**: clip the global gradient norm to 1.0, which keeps the occasional large gradient from wrecking the stability of training.
 
-我们使用**预热余弦衰减**学习率调度器，通过预热和余弦衰减两个步骤，实现学习率增长到峰值，然后衰减的过程。
+**Muon** is the most closely watched alternative to AdamW in recent years. It is applied only to two-dimensional weight matrices: it first orthogonalizes the momentum and then updates the parameters, while the remaining parameters (such as embeddings and normalization) still use AdamW. Muon keeps only one momentum buffer, so its optimizer state takes less GPU memory than AdamW's, and its sample efficiency is also an advantage. Kimi K2 (1.04T parameters, 15.5T tokens) used its improved version MuonClip, and GLM-4.5, GLM-5, and DeepSeek-V4 also used Muon.
 
-但是它也有一个缺点：必须事先确定总训练步数，不灵活。
+### Learning rate schedulers
 
-**WSD**（Warmup-Stable-Decay）不需要事先确定训练量：
+We use the warmup cosine decay learning rate scheduler, which raises the learning rate to a peak through warmup and then decays it through cosine decay.
 
-* **预热**：学习率增长到峰值；
-* **稳定**：保持峰值稳定；
-* **衰减**：想要停止训练时，才在最后一段（比如 10%）里快速衰减。
+But it has a drawback: the total number of training steps must be fixed in advance, which is inflexible.
 
-这样可以从稳定阶段的任意检查点出发，再决定怎么收尾，也方便在稳定阶段之后继续训练或者调整数据。
+**WSD** (Warmup-Stable-Decay) does not need the amount of training to be fixed in advance:
 
-### 超参数的缩放
+* **Warmup**: the learning rate rises to the peak;
+* **Stable**: the learning rate is held at the peak;
+* **Decay**: only when we want to stop training is the learning rate decayed quickly over the last stretch (for example 10%).
 
-小模型上调好的超参数，在大模型上往往不再最优。通常的做法是：大模型的峰值学习率比小模型更小，批量大小随训练进行逐步增大；
-也有 **μP**（Maximal Update Parametrization）这类方法，通过调整初始化和各层的学习率缩放，让小模型调好的超参数可以直接迁移到大模型。
+This way, we can start from any checkpoint in the stable phase and decide how to finish, and it is also convenient to continue training or adjust the data after the stable phase.
 
-### 训练稳定性
+### Scaling hyperparameters
 
-大模型预训练动辄持续几周甚至几个月，训练中途出现**损失尖峰**（Loss Spike）甚至发散，代价非常高。
-常见的诱因包括：学习率过大、注意力分数增长过快导致 Softmax 饱和、数值溢出、个别异常数据。常用的应对方法：
+Hyperparameters tuned on a small model are often no longer optimal on a large one. The usual practice is: the peak learning rate of a large model is smaller than that of a small model, and the batch size is gradually increased during training. There are also methods such as **μP** (Maximal Update Parametrization), which adjust the initialization and the learning rate scaling of each layer so that hyperparameters tuned on a small model can be transferred directly to a large one.
 
-* **预防**：QK-Norm、梯度裁剪、较小的 $\beta_2$、学习率预热、合适的初始化；
-* **约束输出**：**z-loss** 在损失中增加一项，惩罚输出层 Softmax 的归一化项过大，防止输出 logit 失控；
-* **直接约束权重**：MuonClip 在每次更新后，直接缩放让注意力分数过大的查询和键投影权重，Kimi K2 的整个预训练过程没有出现损失尖峰；
-* **监控**：持续记录损失、梯度范数、注意力分数的最大值、激活值的异常值，在问题放大之前发现；
-* **补救**：出现尖峰后，回退到更早的检查点，并跳过触发尖峰的那部分数据批次。
+### Training stability
 
-## 训练数据
+Large-model pre-training often lasts weeks or even months, and a **loss spike** or even divergence in the middle of training is very costly. Common causes include: a learning rate that is too large, attention scores growing too fast and saturating the Softmax, numerical overflow, and a few abnormal data points. Commonly used countermeasures:
 
-模型的能力，很大程度上取决于数据。数据工作通常占据预训练团队的大部分精力。
+* **Prevention**: QK-Norm, gradient clipping, a smaller $\beta_2$, learning rate warmup, and suitable initialization;
+* **Constraining the output**: **z-loss** adds a term to the loss that penalizes an overly large normalization term of the output-layer Softmax, to keep the output logits from running out of control;
+* **Constraining the weights directly**: after every update, MuonClip directly rescales the query and key projection weights that make attention scores too large; according to the Kimi K2 technical report, its whole pre-training run had no loss spike;
+* **Monitoring**: continuously record the loss, the gradient norm, the maximum of the attention scores, and the outliers of the activations, to catch problems before they grow;
+* **Remedy**: after a spike, roll back to an earlier checkpoint and skip the data batches that triggered the spike.
 
-### 数据来源
+## Training data
 
-* **网页**：来自 Common Crawl 等网页抓取，是最大的来源，但是质量参差不齐；
-* **代码**：来自开源代码仓库，除了提升编程能力，也被认为有助于提升推理能力；
-* **书籍、论文、百科**：质量高，但数量有限；
-* **数学和科学文本**：专门收集或者合成的 STEM 数据；
-* **多语言数据**：Qwen3 的预训练数据覆盖 119 种语言和方言。
+The abilities of a model depend largely on data. Data work usually takes most of the energy of a pre-training team.
 
-公开的大规模预训练数据集，比如 FineWeb（约 15 万亿词元），让研究者可以复现完整的数据处理流程。
+### Data sources
 
-### 数据清洗
+* **Web pages**: from web crawls such as Common Crawl; the largest source, but of uneven quality;
+* **Code**: from open-source code repositories; besides improving programming ability, it is also thought to help reasoning;
+* **Books, papers, and encyclopedias**: high quality, but limited in quantity;
+* **Mathematics and science text**: STEM data that is specially collected or synthesized;
+* **Multilingual data**: the pre-training data of Qwen3 covers 119 languages and dialects.
 
-原始数据必须经过多道处理才能使用，典型的流程是：
+Public large-scale pre-training datasets, such as FineWeb (about 15 trillion tokens), let researchers reproduce the complete data processing pipeline.
 
-* **提取和过滤**：从网页中提取正文，识别语言，用启发式规则去掉乱码、过短、重复度过高的文本；
-* **质量分类**：训练一个分类器给文本的质量打分，只保留高分的数据。例如 FineWeb-Edu 保留“有教育价值”的网页，DCLM 使用一个轻量的分类器；
-* **去重**：用 MinHash 等算法去掉重复和高度相似的文档。重复数据会浪费算力，还会让模型死记硬背；
-* **安全与隐私**：去掉个人隐私信息和有害内容；
-* **去污染**：去掉和评测基准重叠的内容，避免评测结果虚高。
+### Data cleaning
 
-### 数据配比
+Raw data must go through several processing steps before it can be used. A typical pipeline is:
 
-不同来源的数据按什么比例混合，对模型能力影响很大。配比可以靠小模型上的实验来调整，也有 DoReMi 这样自动搜索配比的方法。
-重复使用同一份数据的收益是递减的：研究表明，重复 4 个轮次以内的数据，效果接近全新的数据。
+* **Extraction and filtering**: extract the main text from web pages, identify the language, and use heuristic rules to remove garbled, too-short, and overly repetitive text;
+* **Quality classification**: train a classifier to score the quality of text and keep only high-scoring data. For example, FineWeb-Edu keeps web pages that are "educationally valuable", and DCLM uses a lightweight classifier;
+* **Deduplication**: use algorithms such as MinHash to remove duplicate and highly similar documents. Duplicate data wastes compute and also makes the model memorize by rote;
+* **Safety and privacy**: remove personal private information and harmful content;
+* **Decontamination**: remove content that overlaps with evaluation benchmarks, so that evaluation results are not inflated.
 
-现代大模型的预训练通常是**分阶段**的，后期的数据质量更高。以 Qwen3 为例：
+### Data mixing
 
-1. 第一阶段：约 30 万亿词元，序列长度 4K，建立通用的语言能力和知识；
-2. 第二阶段：约 5 万亿词元，提高 STEM、代码、推理等知识密集型数据的占比，并加快学习率衰减；
-3. 第三阶段：用数千亿词元的长文本，把上下文扩展到 32K。
+The proportions in which data from different sources are mixed have a large impact on model ability. Mixtures can be tuned through experiments on small models, and there are also methods such as DoReMi that search for the mixture automatically. The gain from reusing the same data diminishes: some studies have found that data repeated up to 4 epochs works about as well as fresh data.
 
-在学习率衰减阶段加入高质量数据，也叫**退火**（Annealing）。这些后期阶段有时单独称为**中期训练**（Mid-training）。
+The pre-training of modern large models is usually **staged**, with higher data quality in the later stages. Take Qwen3 as an example:
 
-### 合成数据
+1. Stage 1: about 30 trillion tokens with a sequence length of 4K, to build general language ability and knowledge;
+2. Stage 2: about 5 trillion tokens, increasing the share of knowledge-intensive data such as STEM, code, and reasoning, and speeding up the learning rate decay;
+3. Stage 3: several hundred billion tokens of long text, to extend the context to 32K.
 
-高质量的自然数据是有限的，所以越来越多地使用**合成数据**：
+Adding high-quality data during the learning rate decay phase is also called **annealing**. These later stages are sometimes called **mid-training** separately.
 
-* **改写**：让模型把已有的文本改写成不同的风格或者更清晰的表达，增加数据的多样性。Kimi K2 的预训练数据中就使用了改写；
-* **教材式数据**：让强模型生成教科书风格的内容和习题。Phi 系列小模型是代表；
-* **领域合成**：Qwen3 用 Qwen2.5-Math 和 Qwen2.5-Coder 生成数学和代码数据；
-* **可验证的合成**：生成带有答案或者测试用例的题目，用程序验证后才保留。
+### Synthetic data
 
-合成数据的风险是：模型用自己生成的数据反复训练，可能逐渐丧失多样性。所以必须严格过滤，并且和真实数据混合使用。
+High-quality natural data is limited, so **synthetic data** is used more and more:
 
-## 缩放定律
+* **Rewriting**: have a model rewrite existing text into different styles or clearer expressions, which increases the diversity of the data. The pre-training data of Kimi K2 used rewriting;
+* **Textbook-style data**: have a strong model generate textbook-style content and exercises. The Phi series of small models is the representative;
+* **Domain synthesis**: Qwen3 used Qwen2.5-Math and Qwen2.5-Coder to generate mathematics and code data;
+* **Verifiable synthesis**: generate problems with answers or test cases, and keep them only after verifying them with programs.
 
-### 损失和规模的关系
+The risk of synthetic data is that a model repeatedly trained on its own generated data may gradually lose diversity. So it must be filtered strictly and mixed with real data.
 
-**缩放定律**（Scaling Law）发现：模型的损失和模型参数量 $N$、训练数据量 $D$、计算量 $C$ 之间，呈现可预测的幂律关系。
-一个常用的形式是：
+## Scaling laws
+
+### The relationship between loss and scale
+
+**Scaling laws** found that the loss of a model has a predictable power-law relationship with the number of model parameters $N$, the amount of training data $D$, and the amount of compute $C$. A commonly used form is:
 
 $$
 L(N, D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}
 $$
 
-其中 $E$ 是无法消除的损失下限。训练的计算量大约是 $C \approx 6ND$。有了缩放定律，就可以在小规模实验上拟合曲线，
-外推预测大模型的损失，在投入巨额算力之前做决策。
+Where:
 
-### 计算最优
+* $E$: the irreducible lower bound of the loss;
+* $A$, $B$, $\alpha$, $\beta$: constants obtained by fitting experiments.
 
-给定固定的计算预算，应该训练多大的模型、用多少数据？早期的研究（Kaplan 等）倾向于把更多预算花在增大模型上。
-后来的 **Chinchilla** 研究修正了结论：参数量和数据量应该同步增长，**计算最优**的比例大约是每个参数对应 20 个词元。
+The compute of training is about $C \approx 6ND$. With scaling laws, we can fit curves on small-scale experiments and extrapolate to predict the loss of large models, making decisions before investing huge amounts of compute.
 
-### 过度训练
+### Compute-optimal
 
-计算最优只考虑了训练成本。但是模型训练一次，却要推理无数次，更小的模型推理更便宜。
-所以现代大模型常常**过度训练**（Overtraining）：用远超计算最优的数据量训练一个较小的模型。
-例如 Llama 3 的 8B 模型训练了约 15 万亿词元，是 Chinchilla 比例的近百倍；Qwen3 使用了 36 万亿词元。
+Given a fixed compute budget, how large a model should we train, and with how much data? Early research (Kaplan et al.) tended to spend more of the budget on enlarging the model. The later Chinchilla research revised the conclusion: the number of parameters and the amount of data should grow together, and the **compute-optimal** ratio is about 20 tokens per parameter.
 
-对 MoE 模型，缩放定律中的参数量应该使用激活参数量，数据量的需求则相应变化。
+### Overtraining
 
-### 涌现能力
+Compute-optimal considers only the cost of training. But a model is trained once and used for inference countless times, and a smaller model is cheaper for inference. So modern large models are often **overtrained**: a smaller model is trained with far more data than is compute-optimal. For example, the 8B model of Llama 3 was trained on about 15 trillion tokens, nearly a hundred times the Chinchilla ratio; Qwen3 used 36 trillion tokens.
 
-大模型在规模超过某个阈值后，某些能力似乎突然出现，称为**涌现能力**（Emergent Abilities）。
-但是也有研究指出，这很大程度上取决于评测指标：用“完全正确才得分”的指标会呈现出突变，换成平滑的指标，能力其实是逐渐提升的。
-对读者来说，更重要的结论是：能力随规模提升的趋势是可以预测的，但是具体某项能力何时达到可用，仍然需要实测。
+For MoE models, the parameter count in the scaling law should be the number of activated parameters, and the data requirement changes accordingly.
 
-后训练和推理阶段也出现了新的缩放维度：强化学习的算力、推理时的计算量，后续章节会介绍。
+### Emergent abilities
 
-## 训练系统
+After a model's scale exceeds some threshold, certain abilities seem to appear suddenly; these are called **emergent abilities**. But there is also research pointing out that this depends largely on the evaluation metric: a metric that scores only "completely correct" shows abrupt jumps, while with a smooth metric the ability actually improves gradually. For readers, the more important conclusion is that the trend of abilities improving with scale is predictable, but when a specific ability becomes usable still needs to be measured.
 
-### 并行策略
+New dimensions of scaling have also appeared in the post-training and inference stages: the compute for reinforcement learning and the compute at inference time, which later chapters introduce.
 
-大模型无法放进一张 GPU，必须把训练拆分到成百上千张 GPU 上。常用的并行方式有：
+## Training systems
 
-* **数据并行**（Data Parallelism）：每张卡有一份完整的模型，处理不同的数据，然后同步梯度。**ZeRO** 和 **FSDP** 进一步把优化器状态、梯度、参数切分到各张卡上，省显存；
-* **张量并行**（Tensor Parallelism）：把单个矩阵乘法切分到多张卡上，通信频繁，通常限制在一台机器内部；
-* **流水线并行**（Pipeline Parallelism）：把不同的层放在不同的卡上，数据像流水线一样依次经过；
-* **序列并行 / 上下文并行**：把长序列切分到多张卡上，应对长上下文；
-* **专家并行**（Expert Parallelism）：MoE 模型把不同的专家放在不同的卡上。
+### Parallelism strategies
 
-实际训练通常把这些方式组合起来使用。Megatron-LM、DeepSpeed、torchtitan 是常用的训练框架。
+A large model cannot fit in one GPU, so training must be split across hundreds or thousands of GPUs. Commonly used parallelism methods are:
 
-### 显存和效率
+* **Data parallelism**: each card holds a complete copy of the model and processes different data, and the gradients are then synchronized. **ZeRO** and **FSDP** go further and shard the optimizer state, gradients, and parameters across cards to save GPU memory;
+* **Tensor parallelism**: split a single matrix multiplication across several cards. Communication is frequent, so it is usually limited to within one machine;
+* **Pipeline parallelism**: put different layers on different cards, and the data passes through them in turn like an assembly line;
+* **Sequence parallelism / context parallelism**: split a long sequence across several cards, to handle long contexts;
+* **Expert parallelism**: an MoE model puts different experts on different cards.
 
-* **混合精度**：前向和反向用 BF16 计算，优化器状态保持 FP32。**FP8** 训练已被广泛采用，DeepSeek-V3 是代表；
-NVIDIA 还在 Blackwell 架构上验证了 **NVFP4** 的 4 位浮点训练，在 12B 参数、10 万亿词元的训练中，损失和下游效果接近 FP8；
-* **激活重计算**（Activation Checkpointing）：前向时不保存所有中间结果，反向时重新计算，用计算换显存；
-* **算子融合和 FlashAttention**：减少显存读写；
-* **通信与计算重叠**：训练时让梯度同步、专家通信等和计算同时进行，隐藏通信的延迟。
+Real training usually combines these methods. Megatron-LM, DeepSpeed, and torchtitan are commonly used training frameworks.
 
-衡量训练效率的常用指标是**模型浮点利用率**（Model FLOPs Utilization，MFU）：实际达到的计算量占硬件理论峰值的比例。
-大规模训练的 MFU 通常在 30% 到 50% 之间。
+### Memory and efficiency
 
-### 容错和持久化
+* **Mixed precision**: compute the forward and backward passes in BF16 and keep the optimizer state in FP32. FP8 training has been widely adopted, with DeepSeek-V3 as the representative; NVIDIA has also validated 4-bit floating-point training with NVFP4 on the Blackwell architecture, and in a training run with 12B parameters and 10 trillion tokens, the loss and downstream results were close to FP8;
+* **Activation checkpointing**: do not save all intermediate results in the forward pass and recompute them in the backward pass, trading compute for memory;
+* **Operator fusion and FlashAttention**: reduce reads and writes of GPU memory;
+* **Overlapping communication and computation**: during training, let gradient synchronization, expert communication, and so on run at the same time as computation, hiding the latency of communication.
 
-规模越大，出故障越是常态。Llama 3 在 16K 张 H100 上训练的时候，大约 54 天里发生了 400 多次意外中断，其中大多数是硬件故障。
-所以大规模训练必须具备：
+A commonly used metric of training efficiency is **model FLOPs utilization** (MFU): the fraction of the hardware's theoretical peak that is actually achieved. The MFU of large-scale training is usually between 30% and 50%.
 
-* **定期保存检查点**：我们在“模型持久化”章节保存了参数，大规模训练还需要保存优化器状态、数据读取位置和随机数状态，才能完整恢复；
-* **异步保存**：把检查点写入存储的过程和训练重叠，减少对训练的打断；
-* **自动故障检测和恢复**：发现故障后自动替换节点，从最近的检查点继续训练。
+### Fault tolerance and persistence
 
-## 评估
+The larger the scale, the more normal failures become. When Llama 3 was trained on 16K H100 GPUs, there were more than 400 unexpected interruptions in about 54 days, most of them hardware failures. So large-scale training must have:
 
-预训练阶段的评估，目标是判断模型学到了什么，以及训练是否在正确的方向上：
+* **Regular checkpoints**: in the "Model persistence" chapter we saved the parameters, and large-scale training also needs to save the optimizer state, the position in data reading, and the random number state, to be fully recoverable;
+* **Asynchronous saving**: overlap the process of writing checkpoints to storage with training, to reduce interruptions to training;
+* **Automatic fault detection and recovery**: after a fault is found, automatically replace the node and continue training from the latest checkpoint.
 
-* **验证损失**：在保留的数据上计算损失（或者困惑度）。比较不同分词器的模型时，常常换算成每字节的损失；
-* **下游基准**：用少样本提示评测知识、推理、数学、代码等能力，比如 MMLU、ARC、HellaSwag、GSM8K、HumanEval 等。
-小规模实验中也要选择在小模型上就有区分度的任务；
-* **数据污染**：基准题目如果出现在训练数据里，分数就不可信，需要去污染，也要警惕基准逐渐饱和；
-* **评测工具**：lm-evaluation-harness、OpenCompass 等开源框架可以统一评测流程。
+## Evaluation
 
-预训练得到的是基座模型，它的评估和对话模型不同，后者会在微调综述中介绍。
+The goal of evaluation in the pre-training stage is to judge what the model has learned and whether training is going in the right direction:
+
+* **Validation loss**: compute the loss (or perplexity) on held-out data. When comparing models with different tokenizers, it is often converted to loss per byte;
+* **Downstream benchmarks**: use few-shot prompting to evaluate knowledge, reasoning, mathematics, and code abilities, for example MMLU, ARC, HellaSwag, GSM8K, and HumanEval. In small-scale experiments, tasks that already discriminate between small models should be chosen;
+* **Data contamination**: if benchmark questions appear in the training data, the scores are not trustworthy, so decontamination is needed, and one should also watch out for benchmarks gradually saturating;
+* **Evaluation tools**: open-source frameworks such as lm-evaluation-harness and OpenCompass can unify the evaluation process.
+
+What pre-training yields is a base model, and its evaluation differs from that of a chat model, which is introduced in the fine-tuning survey.
 
 ---
 
-本章节，我们梳理了预训练领域的主流技术：
+In this chapter, we surveyed the mainstream techniques of pre-training:
 
-* **效率**：怎样在有限的算力下，学到更多：字节级 BPE、RoPE、SwiGLU、MoE、FlashAttention、混合精度；
-* **稳定**：怎样让训练稳定：RMSNorm、QK-Norm、WSD、梯度裁剪、MuonClip；
-* **长度**：怎样处理更长的上下文：RoPE 扩展、GQA 和 MLA、稀疏注意力、线性注意力和混合架构；
-* **数据**：怎样得到更好的数据：清洗、去重、配比、合成数据；
-* **规模**：怎样有计划地扩大：缩放定律、并行策略、训练系统。
+* **Efficiency**: how to learn more with limited compute (byte-level BPE, RoPE, SwiGLU, MoE, FlashAttention, mixed precision);
+* **Stability**: how to make training more stable (RMSNorm, QK-Norm, WSD, gradient clipping, MuonClip);
+* **Length**: how to handle longer contexts (RoPE extension, GQA and MLA, sparse attention, linear attention, and hybrid architectures);
+* **Data**: how to get better data (cleaning, deduplication, mixing, synthetic data);
+* **Scale**: how to scale up in a planned way (scaling laws, parallelism strategies, training systems).
 
-我们从零实现的 GPT 模型，是这些技术的起点。Transformer 的基本结构，至今仍是主流模型的骨架，目前后续的改进，大多是在这个骨架上打补丁，
-而 2025 年以来的混合架构，也在开始改变骨架本身。
+The GPT model we implemented from scratch is the starting point of these techniques. The basic structure of the Transformer is still the skeleton of mainstream models today, and later improvements mostly patch this skeleton, while the hybrid architectures since 2025 have begun to change the skeleton itself.
+
+## References
+
+* Vaswani et al., *Attention Is All You Need*, 2017.
+* Radford et al., *Language Models are Unsupervised Multitask Learners*, 2019.
+* Brown et al., *Language Models are Few-Shot Learners*, 2020.
+* Kaplan et al., *Scaling Laws for Neural Language Models*, 2020.
+* Hoffmann et al., *Training Compute-Optimal Large Language Models*, 2022.
+* Su et al., *RoFormer: Enhanced Transformer with Rotary Position Embedding*, 2021.
+* Press et al., *Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation*, 2021.
+* Ainslie et al., *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*, 2023.
+* Dao et al., *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*, 2022.
+* Zhang and Sennrich, *Root Mean Square Layer Normalization*, 2019.
+* Xiong et al., *On Layer Normalization in the Transformer Architecture*, 2020.
+* Shazeer, *GLU Variants Improve Transformer*, 2020.
+* DeepSeek-AI, *DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model*, 2024.
+* DeepSeek-AI, *DeepSeek-V3 Technical Report*, 2024.
+* Meta, *The Llama 3 Herd of Models*, 2024.
+* Qwen Team, *Qwen3 Technical Report*, 2025.
+* Kimi Team, *Kimi K2: Open Agentic Intelligence*, 2025.
+* NVIDIA, *Pretraining Large Language Models with NVFP4*, 2025.
+* GLM-5 Team, *GLM-5: from Vibe Coding to Agentic Engineering*, 2026.
+* Muennighoff et al., *Scaling Data-Constrained Language Models*, 2023.
+* Penedo et al., *The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale*, 2024.
+* Schaeffer et al., *Are Emergent Abilities of Large Language Models a Mirage?*, 2023.
