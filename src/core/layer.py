@@ -47,7 +47,7 @@ class Linear(Layer):
             self.bias.grad += np.sum(grad, axis=0)
             x.grad += p.grad @ self.weight.data
 
-        return p.attach(gradient_fn, {self.weight, self.bias, x})
+        return p.attach(gradient_fn, {x})
 
     @property
     def parameters(self):

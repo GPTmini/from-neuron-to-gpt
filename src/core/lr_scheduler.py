@@ -5,11 +5,11 @@ from abc import ABC, abstractmethod
 class LRScheduler(ABC):
 
     @abstractmethod
-    def step(self, step):
+    def step(self, current_step):
         pass
 
 
-class WarmupCosineScheduler:
+class WarmupCosineScheduler(LRScheduler):
 
     def __init__(self, lr, total_steps, warmup_steps, min_lr=0.0):
         self.lr = lr
