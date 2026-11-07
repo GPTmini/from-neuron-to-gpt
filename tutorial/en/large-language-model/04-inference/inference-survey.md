@@ -1,295 +1,331 @@
-# 推理技术综述
+# Inference Techniques Survey
 
-通过四个章节，我们实现了模型推理的四项基本功能：**采样策略**、**停止条件**、**键值缓存**和**批量推理**。
-它们回答了两个问题：怎样控制模型生成，怎样让模型生成得快一点。
+In Chapters 11 to 14, we implemented four basic features of model inference: sampling strategies, stopping criteria, the KV cache, and batch inference. They answer two questions: how to control what
+the model generates, and how to make it generate faster.
 
-但是，我们实现的基本功能和工业界的推理系统之间还有很大的差距。今天的大模型服务，动辄同时处理成千上万个请求，
-模型参数达到数百亿甚至上万亿，推理的每一个环节都经过了极致的优化。
+But there is still a big gap between these basic features and industrial inference systems. Today's LLM services handle thousands of requests at the same time, models have tens or even hundreds of
+billions of parameters, and every step of inference has been heavily optimized.
 
-本章我们来梳理一下模型推理领域的主流技术。
+In this chapter, we survey the mainstream techniques in model inference.
 
-## 推理为什么慢
+> LLM technology evolves quickly. The content of this chapter is current as of November 2026.
 
-每次推理包含两个不同的阶段：
+## Why inference is slow
 
-* **预填充**（Prefill）：一次性处理全部提示词元，计算它们的 key 和 value，然后生成第一个词元。
-矩阵乘法规模大，瓶颈是**算力**（Compute-bound）；
-* **解码**（Decode）：之后每一步只处理一个新词元，串行生成。每一步都要把全部模型参数和 KV 缓存从显存读一遍，
-却只做很少的计算，瓶颈是**显存带宽**（Memory-bound）。
+Each inference request has two distinct phases:
 
-几乎所有的推理优化，都围绕三个目标：
+* **Prefill**: process all the prompt tokens at once, compute their keys and values, and generate the first token. The matrix multiplications are large, so the bottleneck is compute (compute-bound);
+* **Decode**: from then on, process only one new token per step, generating serially. Every step has to read all the model parameters and the KV cache from GPU memory, but does very little
+  computation, so the bottleneck is memory bandwidth (memory-bound).
 
-* **少读数据**：量化、GQA、MLA；
-* **多做并行**：连续批处理、投机解码；
-* **少做重复**：KV 缓存、前缀缓存。
+Almost all inference optimizations revolve around three goals:
 
-### KV 缓存的显存占用
+* **Read less data**: quantization, GQA, MLA;
+* **Do more in parallel**: continuous batching, speculative decoding;
+* **Do less repeated work**: KV cache, prefix caching.
 
-键值缓存是用空间换时间，但是空间也不免费。每个词元的缓存大小为：
+### Memory footprint of the KV cache
+
+The KV cache trades space for time, but space is not free. The cache size per token is:
 
 $$
 \text{size} = 2 \times L \times H_{kv} \times d_{head} \times \text{bytes}
 $$
 
-其中 2 代表 key 和 value，$L$ 是层数，$H_{kv}$ 是 KV 头数，$d_{head}$ 是每头嵌入尺寸。
+Where:
 
-以 Llama-2-7B（32 层、32 头、每头 128 维、FP16）为例，每个词元占用 512 KB，一个 4096 词元的序列就是 2GB。
-同时服务 32 个请求，仅缓存就要 64GB，比模型本身（约 14GB）还大。
+* $2$: one copy each for keys and values;
+* $L$: number of layers;
+* $H_{kv}$: number of key-value heads;
+* $d_{head}$: embedding size per head;
+* $\text{bytes}$: number of bytes per value, 2 for FP16.
 
-而 Llama-3-8B 使用 GQA，只有 8 个 KV 头，每个词元只需要 128 KB，同样的序列只要 0.5GB。
-这就是为什么 GQA、MLA 能成为主流：它们直接缩小了缓存。
+Take Llama-2-7B (32 layers, 32 key-value heads, 128 dimensions per head, FP16) as an example. Each token takes 512 KB, so a sequence of 4096 tokens takes 2 GB. Serving 32 requests at the same time
+needs 64 GB for the cache alone, more than the model itself (about 14 GB).
 
-### 衡量指标
+Llama-3-8B, on the other hand, uses GQA and has only 8 key-value heads. Each token needs only 128 KB, and the same sequence takes only 0.5 GB. This is why GQA and MLA became mainstream: they shrink
+the cache directly.
 
-评价一个推理系统，需要从用户体验和系统效率两个角度：
+### Metrics
 
-* **首词元延迟**（Time To First Token，TTFT）：从发出请求到收到第一个词元的时间，主要由排队和预填充决定；
-* **单词元延迟**（Time Per Output Token，TPOT，也叫词元间延迟）：之后每个词元的生成间隔，决定了“打字”的流畅度；
-* **吞吐量**（Throughput）：系统每秒生成的词元总数，决定了单位成本；
-* **有效吞吐**（Goodput）：只统计满足延迟要求的请求所贡献的吞吐；
-* **尾延迟**：关注 P99 等分位数，而不是平均值，因为少数很慢的请求会严重影响体验。
+An inference system should be evaluated from two angles: user experience and system efficiency:
 
-这些指标之间存在权衡：批量越大，吞吐越高，但是每个请求的延迟也越高。推理系统的设计，
-就是在延迟目标（SLO）约束下，把吞吐尽可能提高。
+* **Time to first token** (TTFT): the time from sending a request to receiving the first token, mainly determined by queuing and prefill;
+* **Time per output token** (TPOT, also called inter-token latency): the interval between subsequent tokens, which determines how smooth the "typing" feels;
+* **Throughput**: the total number of tokens the system generates per second, which determines the cost per unit;
+* **Goodput**: the throughput contributed only by requests that meet the latency requirements;
+* **Tail latency**: look at percentiles such as P99 rather than the average, because a few very slow requests seriously hurt the experience.
 
-## 模型压缩
+There are trade-offs among these metrics: the larger the batch size, the higher the throughput, but the higher the latency of each request. Designing an inference system means maximizing throughput
+under the constraint of latency targets (SLOs).
 
-解码的瓶颈是读取数据，那么最直接的办法就是：让模型变小。
+## Model compression
 
-### 量化
+The bottleneck of decoding is reading data, so the most direct approach is to make the model smaller.
 
-**量化**（Quantization）：用低精度的整数（INT8、INT4）代替 FP16 或者 FP32 表示参数。
-显然，量化可以减少显存占用，加速解码。常见的量化方案：
+### Quantization
 
-* **仅量化权重**（Weight-only）：量化权重，计算时再反量化回 FP16。**GPTQ** 逐层利用二阶信息补偿量化误差，
-**AWQ** 保护对激活影响最大的少数权重通道；
-* **量化权重和激活**：权重和激活都量化，同时加速预填充和解码。难点是激活中存在少量数值极大的**离群值**（Outlier）：
-**LLM.int8()** 把离群维度单独用 FP16 计算，**SmoothQuant** 把激活中的量化难度转移到权重上；
-* **低精度浮点**：FP8（Hopper 架构）、FP4（Blackwell 架构）等，保留浮点的动态范围，比整数更容易处理离群数值。
-例如 gpt-oss 的 MoE 权重使用 MXFP4 发布，让大模型可以放进单张 GPU；
-* **KV 缓存量化**：把 KV 缓存也量化，直接缩小缓存占用；
-* **GGUF**：llama.cpp 使用的文件格式，按块量化，让模型可以在 CPU 和消费级设备上运行。
+**Quantization** uses low-precision integers (INT8, INT4) instead of FP16 or FP32 to represent parameters. Obviously, quantization reduces memory usage and speeds up decoding. Common quantization
+schemes:
 
-量化是有损的。通常 INT8 几乎无损，INT4 有轻微的精度损失。训练后量化（PTQ）最常用，
-需要更高精度时也可以在训练中引入量化（QAT）。
+* **Weight-only quantization**: quantize the weights and dequantize them back to FP16 at compute time. GPTQ compensates for quantization error layer by layer using second-order information, and AWQ
+  protects the few weight channels that matter most for the activations;
+* **Weight and activation quantization**: quantize both weights and activations, which speeds up both prefill and decode. The difficulty is that activations contain a few extremely large **outliers**:
+  LLM.int8() computes the outlier dimensions separately in FP16, and SmoothQuant shifts the quantization difficulty from the activations to the weights;
+* **Low-precision floating point**: FP8 (Hopper architecture), FP4 (Blackwell architecture), and so on. They keep the dynamic range of floating point, which handles outliers more easily than integers.
+  For example, gpt-oss released its MoE weights in MXFP4, so that a large model can fit on a single GPU;
+* **KV cache quantization**: quantize the KV cache as well, which directly shrinks the cache;
+* **GGUF**: the file format used by llama.cpp. It quantizes block by block, so that models can run on CPUs and consumer devices.
 
-### 剪枝
+Quantization is lossy. Usually INT8 is almost lossless, while INT4 causes a slight loss of accuracy. Post-training quantization (PTQ) is the most common. When higher accuracy is needed, quantization
+can also be introduced during training (QAT).
 
-**剪枝**（Pruning）：去掉模型中不重要的部分：
+### Pruning
 
-* **非结构化剪枝**：把任意位置的权重置 0。压缩率高，但是普通 GPU 很难加速。
-**SparseGPT** 可以一次性把大模型剪掉 50% 而精度几乎不变；
-* **半结构化剪枝**：每连续 4 个权重中有 2 个为 0，NVIDIA Ampere 架构有硬件支持；
-* **结构化剪枝**：直接去掉整个注意力头、通道甚至整层，得到一个更小的稠密模型。不需要特殊硬件，
-但是精度损失大，通常需要再训练或者配合知识蒸馏（见微调技术综述）。
+**Pruning** removes the unimportant parts of a model:
 
-## 注意力优化
+* **Unstructured pruning**: set weights at arbitrary positions to 0. The compression ratio is high, but it is hard to accelerate on ordinary GPUs. SparseGPT can prune a large model by 50% in one shot
+  with almost no loss of accuracy;
+* **Semi-structured pruning**: in every 4 consecutive weights, 2 are zero. The NVIDIA Ampere architecture has hardware support for it;
+* **Structured pruning**: remove whole attention heads, channels, or even whole layers, getting a smaller dense model. It needs no special hardware, but the accuracy loss is large, and it usually
+  requires retraining or knowledge distillation (see the fine-tuning survey).
 
-注意力是推理中最特殊的部分：它的计算量随序列长度增长，缓存也随序列长度增长。
+## Attention optimization
 
-### 减少键值头
+Attention is the most special part of inference: its computation grows with sequence length, and so does its cache.
 
-MQA、GQA、MLA 的原理在预训练技术综述中已经介绍。从推理的角度看，它们的价值是直接缩小 KV 缓存：
-GQA 把缓存缩小到 MHA 的几分之一，MLA 缓存的是低维的潜向量，可以压缩一个数量级以上。
-缓存变小意味着同样的显存能同时服务更多请求，每一步读取的数据也更少。
+### Reducing key-value heads
+
+The principles of MQA, GQA, and MLA were introduced in the pre-training survey. From the inference point of view, their value is that they shrink the KV cache directly: GQA shrinks the cache to a
+fraction of MHA's, and MLA caches a low-dimensional latent vector, which can compress it by more than an order of magnitude. A smaller cache means the same memory can serve more requests at the same
+time, and less data is read at each step.
 
 ### FlashAttention
 
-FlashAttention 通过分块计算，避免把完整的注意力矩阵写入显存，同样适用于推理的预填充阶段。
+FlashAttention computes attention in blocks and avoids writing the full attention matrix to GPU memory. It applies to the prefill phase of inference as well.
 
-解码阶段有一个特殊的问题：每步只有一个查询词元，在长序列上如果只沿查询方向并行，GPU 利用率很低。
-**Flash-Decoding** 把键值沿序列长度方向切分，分别计算再合并，让长上下文的解码也能充分利用 GPU。
+The decode phase has a special problem: each step has only one query token, and on a long sequence, parallelizing only along the query direction leaves the GPU poorly utilized. Flash-Decoding splits
+the keys and values along the sequence-length direction, computes the parts separately, and then merges them, so that decoding with a long context can also make full use of the GPU.
 
 ### PagedAttention
 
-最朴素的实现，是为每个请求预先分配一块能容纳最大长度的连续缓存。但是请求的实际长度事先未知，
-这会造成严重的显存浪费和碎片。
+The most naive implementation pre-allocates a contiguous block of cache for each request, big enough for the maximum length. But the actual length of a request is unknown in advance, which causes
+serious memory waste and fragmentation.
 
-**PagedAttention**（vLLM 提出）借鉴操作系统的虚拟内存：把 KV 缓存切成固定大小的**块**（Block），
-用一张块表记录每个请求的逻辑块和物理块的对应关系，按需分配。这样几乎没有碎片，
-还可以让多个请求共享相同的块（比如共同的提示词），并且在需要修改时再复制（写时复制）。
+PagedAttention (proposed by vLLM) borrows from the virtual memory of operating systems: it cuts the KV cache into fixed-size **blocks**, uses a block table to record the mapping between each request's
+logical blocks and physical blocks, and allocates on demand. This leaves almost no fragmentation. It also lets multiple requests share the same blocks (for example, a common prompt), and copies a
+block only when it needs to be modified (copy-on-write).
 
-### 前缀缓存
+### Prefix caching
 
-很多请求的开头是相同的：系统提示词、少样本示例、多轮对话的历史、智能体反复调用时不变的上下文。
-**前缀缓存**（Prefix Caching）把这些公共前缀的 KV 缓存保存下来，新请求命中后可以直接跳过这部分的预填充，
-显著降低 TTFT 和成本。
+Many requests start with the same content: system prompts, few-shot examples, the history of a multi-turn conversation, and the unchanged context of repeated agent calls. **Prefix caching** saves the
+KV cache of these common prefixes. A new request that hits the cache can skip the prefill of that part, which significantly reduces TTFT and cost.
 
-实现上，SGLang 的 **RadixAttention** 用前缀树（Radix Tree）管理缓存，vLLM 也提供自动前缀缓存。
-许多模型服务的 API 还提供“提示缓存”功能，命中缓存的输入词元价格更低。
+In implementations, SGLang's RadixAttention manages the cache with a radix tree, and vLLM also provides automatic prefix caching. Many model-serving APIs also offer "prompt caching", where input
+tokens that hit the cache are cheaper.
 
-### KV 缓存压缩
+### KV cache compression
 
-当缓存还是太大时，可以进一步压缩：
+When the cache is still too large, it can be compressed further:
 
-* **量化**：把缓存存成 INT8 或者更低的精度；
-* **淘汰**：只保留重要的词元。**StreamingLLM** 发现开头的少数词元（注意力汇聚点）必须保留，配合滑动窗口就能处理超长输入；
-**H2O**、**SnapKV** 等方法根据历史注意力分数挑选重要的词元；
-* **卸载**：把不常用的缓存转移到 CPU 内存甚至 SSD，需要时再加载回来。
+* **Quantization**: store the cache in INT8 or lower precision;
+* **Eviction**: keep only the important tokens. StreamingLLM found that the first few tokens (attention sinks) must be kept, and together with a sliding window it can handle very long inputs. H2O,
+  SnapKV, and similar methods pick important tokens based on historical attention scores;
+* **Offloading**: move the rarely used cache to CPU memory or even SSD, and load it back when needed.
 
-淘汰类方法是有损的，需要在效果和显存之间权衡。
+Eviction methods are lossy, so they require a trade-off between quality and memory.
 
-### 长上下文
+### Long context
 
-上下文增长带来三重压力：预填充的计算量（与长度的平方相关）、KV 缓存的显存、解码时读取缓存的带宽。
-应对方法包括：位置编码外推（YaRN 等）、稀疏注意力和线性注意力（见预训练技术综述）、前面介绍的缓存压缩，
-以及用上下文并行把长序列切分到多张卡上。
+A longer context brings three kinds of pressure: the computation of prefill (which grows with the square of the length), the memory of the KV cache, and the bandwidth for reading the cache during
+decoding. The responses include position encoding extrapolation (such as YaRN), sparse attention and linear attention (see the pre-training survey), the cache compression introduced above, and context
+parallelism, which splits a long sequence across multiple GPUs.
 
-需要注意：模型“支持”长上下文，不等于能有效利用。评测长上下文能力的“大海捞针”和 RULER 等测试，
-常常发现模型在文本中间位置的信息上表现更差。
+Note that a model "supporting" a long context does not mean it can use it effectively. Evaluations such as RULER found that a model's effective context size is often shorter than the advertised
+number, and research on "Lost in the Middle" also found that models do worse on information located in the middle of the text.
 
-## 请求调度
+## Request scheduling
 
-### 连续批处理
+### Continuous batching
 
-我们实现的批量推理是**静态批处理**：一批请求一起开始，一起结束，短的请求要等待最长的请求完成。
-GPU 在等待中被浪费，新到的请求也必须排队等下一批。
+The batch inference we implemented is **static batching**: a batch of requests starts together and ends together, and the short requests have to wait for the longest one to finish. The GPU is wasted
+while waiting, and newly arrived requests must queue for the next batch.
 
-**连续批处理**（Continuous Batching，也叫迭代级调度）以每个解码步为单位调度：
-某个请求一生成结束，就立刻把它换出，同时把等待中的新请求换入。批的组成在每一步都可以变化，
-GPU 始终保持满载。这是现代推理引擎的基础技术。
+**Continuous batching** (also called iteration-level scheduling) schedules at the granularity of each decode step: as soon as a request finishes generating, it is swapped out and a waiting request is
+swapped in. The composition of the batch can change at every step, and the GPU stays fully loaded. This is the foundation of modern inference engines.
 
-### 分块预填充
+### Chunked prefill
 
-一个很长的提示词，预填充需要很长时间。如果把它和其他请求的解码放在同一批里，所有人的解码都要被它拖慢，用户会感到明显的卡顿。
+Prefill of a very long prompt takes a long time. If it is put in the same batch as the decoding of other requests, everyone's decoding is slowed down by it, and users notice an obvious stutter.
 
-**分块预填充**（Chunked Prefill）把长提示词切成若干小块，每一步只处理一块，并和解码请求混合在同一批里。
-这样既保持了较高的 GPU 利用率，又避免了解码被长预填充阻塞，TPOT 更平稳。
+**Chunked prefill** cuts a long prompt into several small chunks, processes only one chunk per step, and mixes it with decoding requests in the same batch. This keeps GPU utilization high while
+preventing decoding from being blocked by a long prefill, so TPOT is steadier.
 
-### 预填充和解码分离
+### Prefill-decode disaggregation
 
-预填充受算力限制，解码受带宽限制，两者对硬件的需求不同。把它们混在同一批 GPU 上，会互相干扰，
-也无法分别优化 TTFT 和 TPOT。
+Prefill is limited by compute, and decode is limited by bandwidth, so they need different hardware. Mixing them on the same GPUs makes them interfere with each other, and TTFT and TPOT cannot be
+optimized separately.
 
-**预填充和解码分离**（Prefill-Decode Disaggregation）把它们放到不同的 GPU 池里：
-预填充池算完 KV 缓存后，通过高速网络传输给解码池。两个池可以独立扩缩容、选择不同的并行方式和硬件。
-代价是需要传输 KV 缓存，对网络带宽要求高。
+**Prefill-decode disaggregation** puts them in different GPU pools: after the prefill pool computes the KV cache, it transfers it to the decode pool over a high-speed network. The two pools can scale
+independently and choose different parallelism strategies and hardware. The cost is that the KV cache must be transferred, which demands high network bandwidth.
 
-目前 vLLM、SGLang、TensorRT-LLM 等主流引擎都已经支持这种部署方式，
-NVIDIA Dynamo、llm-d 等系统在上层提供多节点的编排，并根据 KV 缓存命中情况路由请求。
+Today, mainstream engines such as vLLM, SGLang, and TensorRT-LLM all support this deployment mode. Systems such as NVIDIA Dynamo and llm-d provide multi-node orchestration on top, and route requests
+based on KV cache hits.
 
-## 分布式并行
+## Distributed parallelism
 
-单张 GPU 放不下模型，或者需要更低的延迟时，就要把模型分布到多张卡上：
+When a single GPU cannot hold the model, or lower latency is needed, the model must be distributed across multiple GPUs:
 
-* **张量并行**：把每一层的矩阵切分到多张卡上，单个请求的延迟更低，但是每层都要通信，需要 NVLink 这样的高速互联，通常限制在一台机器内；
-* **流水线并行**：把不同的层放在不同的卡上，通信少，适合跨机器；
-* **数据并行**：多个完整的模型副本，各自处理不同的请求，用来扩大总吞吐。
+* **Tensor parallelism**: split the matrices of each layer across multiple GPUs. It lowers the latency of a single request, but every layer needs communication, so it requires a high-speed
+  interconnect such as NVLink and is usually limited to a single machine;
+* **Pipeline parallelism**: put different layers on different GPUs. It needs less communication and suits multiple machines;
+* **Data parallelism**: multiple complete copies of the model, each handling different requests, used to increase total throughput.
 
-### 混合专家模型
+### Mixture of experts
 
-MoE 模型的推理有它的特殊性。每个词元只激活少数专家，所以计算量小，但是**全部专家的权重都必须驻留在显存里**。
-解码阶段每一步读取的是被选中的专家，批量很小的时候，几乎每个专家都只处理很少的词元，带宽利用很不划算；
-只有批量足够大，每个专家才能分摊到足够多的词元。
+Inference for MoE models has its own characteristics. Each token activates only a few experts, so the computation is small, but the weights of all the experts must stay in GPU memory. At each decode
+step, only the selected experts are read. When the batch size is small, almost every expert processes very few tokens, and the bandwidth is poorly used; only when the batch size is large enough does
+each expert get enough tokens to amortize the read.
 
-所以 MoE 通常采用**专家并行**：把不同的专家放在不同的卡上，词元通过全对全通信（All-to-All）发送给对应的专家。
-需要同时处理专家负载不均衡、通信开销等问题。DeepSeek 等大规模 MoE 服务，往往使用几十甚至上百张卡做专家并行，
-并配合预填充和解码分离。
+So MoE usually uses **expert parallelism**: put different experts on different GPUs, and send tokens to the corresponding experts through all-to-all communication. This has to deal with load imbalance
+among experts, communication overhead, and similar problems. Large-scale MoE services such as DeepSeek's often use dozens or even hundreds of GPUs for expert parallelism, together with prefill-decode
+disaggregation.
 
-## 解码加速
+## Decoding acceleration
 
-自回归解码每次只生成一个词元，是推理延迟的根本瓶颈。能不能每一步生成多个词元？
+Autoregressive decoding generates only one token at a time, which is the fundamental bottleneck of inference latency. Can we generate multiple tokens in each step?
 
-### 投机解码
+### Speculative decoding
 
-**投机解码**（Speculative Decoding）的核心思想是：用一个便宜的**草稿**（Draft）机制先猜测后面的若干个词元，
-再让大模型**一次性并行验证**这些猜测。大模型处理多个词元的成本，和处理一个词元几乎一样（因为解码受带宽限制，算力是闲置的），
-所以如果猜对了，一次前向就能得到多个词元。
+The core idea of **speculative decoding** is to use a cheap **draft** mechanism to guess the next several tokens first, and then let the large model **verify these guesses in parallel in one pass**.
+Processing multiple tokens costs the large model almost the same as processing one (because decoding is limited by bandwidth and the compute is idle), so if the guesses are right, one forward pass
+yields multiple tokens.
 
-验证时使用特殊的拒绝采样规则：保留符合大模型分布的前缀，在第一个被拒绝的位置按修正后的分布重新采样。
-这个规则保证了最终输出的分布和大模型逐个生成**完全一致**，是无损加速。
+Verification uses a special rejection-sampling rule: keep the prefix that agrees with the large model's distribution, and resample from a corrected distribution at the first rejected position. This
+rule guarantees that the distribution of the final output is exactly the same as generating token by token with the large model, so the speedup is lossless.
 
-草稿的来源有多种：
+The drafts can come from several sources:
 
-* **独立的小模型**：同系列的小尺寸模型，需要和大模型分词器一致；
-* **n-gram 或提示词查找**：直接从提示词里复制片段，适合摘要、代码修改等输出和输入高度重复的场景；
-* **额外的预测头**：Medusa 在大模型上增加多个预测头同时预测后面的多个位置；
-* **EAGLE 系列**：用大模型内部的特征训练一个轻量的草稿头，目前应用最广；
-* **多词元预测**：模型在预训练时就带有 MTP 头（见预训练技术综述），推理时可以直接当草稿使用。
+* **A separate small model**: a smaller model from the same family, which must use the same tokenizer as the large model;
+* **n-gram or prompt lookup**: copy fragments directly from the prompt, which suits tasks such as summarization and code editing where the output highly overlaps with the input;
+* **Extra prediction heads**: Medusa adds multiple prediction heads on the large model to predict several following positions at once;
+* **The EAGLE family**: train a lightweight draft head on the large model's internal features, currently the most widely used;
+* **Multi-token prediction**: the model carries MTP heads from pre-training (see the pre-training survey), which can be used directly as drafts at inference time.
 
-加速比取决于**接受率**（草稿被接受的比例）和草稿本身的开销。批量很大时，GPU 算力不再闲置，投机解码的收益会缩小，
-甚至变成负收益，所以上线前必须在真实流量下测量接受率。
+The speedup depends on the **acceptance rate** (the fraction of drafts that are accepted) and the overhead of the draft itself. When the batch size is large, the GPU compute is no longer idle, so the
+benefit of speculative decoding shrinks and can even become negative. Therefore, measure the acceptance rate under real traffic before going live.
 
-### 非自回归生成
+### Non-autoregressive generation
 
-另一个方向是彻底放弃从左到右的逐个生成。**扩散语言模型**（比如 LLaDA、Mercury、Gemini Diffusion）从一串被遮蔽的词元出发，
-每一轮并行预测多个位置，迭代若干步后得到完整文本。
+Another direction is to give up left-to-right, token-by-token generation altogether. **Diffusion language models** (such as LLaDA, Mercury, and Gemini Diffusion) start from a sequence of masked
+tokens, predict multiple positions in parallel in each round, and get the complete text after several iterations.
 
-它的优势是天然的并行，缺点也很明显：整体质量通常落后于同规模的自回归模型，需要多轮去噪才能收敛，
-并且无法直接使用标准的 KV 缓存。目前更实用的方式，是把扩散模型当作投机解码的草稿生成器。
+Their advantage is natural parallelism, and their disadvantages are also obvious: the overall quality usually lags behind autoregressive models of the same size, they need multiple rounds of denoising
+to converge, and they cannot directly use the standard KV cache. For now, a more practical approach is to use a diffusion model as the draft generator for speculative decoding.
 
-## 生成控制
+## Generation control
 
-### 更多采样策略
+### More sampling strategies
 
-我们实现了温度、Top-k、Top-p。还有一些常见的策略：
+We implemented temperature, top-k, and top-p. There are other common strategies:
 
-* **Min-p**：只保留概率不低于“最大概率 × 比例”的词元，阈值随分布的尖锐程度自动变化，在高温度下更稳健；
-* **典型采样**（Typical Sampling）：优先选择“信息量接近平均水平”的词元，避免过于平庸或者过于冷僻；
-* **重复惩罚、频率惩罚、存在惩罚**：降低已经出现过的词元的概率，缓解重复；
-* **束搜索**（Beam Search）：同时保留多条候选序列，选择整体概率最高的。适合翻译、摘要等有明确“标准答案”的任务，
-但是在开放式生成中容易产生乏味重复的文本；
-* **Logit 偏置**：人为调整某些词元的概率，用来鼓励或者禁止特定词元。
+* **Min-p**: keep only the tokens whose probability is at least "the maximum probability × a ratio". The threshold changes automatically with how sharp the distribution is, and it is more robust at
+  high temperatures;
+* **Typical sampling**: prefer tokens whose "information content is close to the average", avoiding tokens that are too ordinary or too rare;
+* **Repetition, frequency, and presence penalties**: lower the probability of tokens that have already appeared, to reduce repetition;
+* **Beam search**: keep multiple candidate sequences at the same time and choose the one with the highest overall probability. It suits tasks with a clear "standard answer", such as translation and
+  summarization, but tends to produce dull, repetitive text in open-ended generation;
+* **Logit bias**: adjust the probability of certain tokens by hand, to encourage or forbid specific tokens.
 
-关于“确定性”还有一个常被忽略的问题：即使把温度设为 0，不同批量大小下，推理的结果也可能略有差异。
-原因是 GPU 算子对批量大小不是“不变”的，不同批量会改变浮点运算的累加顺序。
-在需要严格复现的场景，比如强化学习训练中对比训练和推理的概率，必须使用批量不变的算子。
+There is also an often overlooked problem about "determinism": even with the temperature set to 0, inference results can differ slightly across batch sizes. The reason is that GPU kernels are not "
+invariant" to batch size: different batch sizes change the order in which floating-point operations are accumulated. In scenarios that need strict reproducibility, such as comparing training and
+inference probabilities in reinforcement learning, batch-invariant kernels must be used.
 
-### 受限解码
+### Constrained decoding
 
-很多应用需要模型输出严格符合某种格式：JSON、特定的函数调用格式、符合某个语法的代码。靠提示词只能提高概率，不能保证。
+Many applications need the model output to strictly follow some format: JSON, a specific function-call format, or code that conforms to a grammar. A prompt can only raise the probability, not
+guarantee it.
 
-**受限解码**（Constrained Decoding）在每一步生成时，根据当前已经生成的内容，计算出下一个“合法”的词元集合，
-把其余词元的 logit 设为负无穷，再做采样。这样输出就一定符合要求。
+**Constrained decoding**, at each generation step, computes the set of "valid" next tokens from what has been generated so far, sets the logits of all other tokens to negative infinity, and then
+samples. This guarantees that the output meets the requirements.
 
-约束通常用正则表达式、上下文无关文法或者 JSON Schema 描述，编译成自动机，再和词表对齐，得到每一步的合法词元。
-常用的工具有 llama.cpp 的 GBNF 语法、Outlines、XGrammar 等，vLLM 和 SGLang 也内置了结构化输出。
+The constraints are usually described with regular expressions, context-free grammars, or JSON Schema, compiled into an automaton, and aligned with the vocabulary to get the valid tokens at each step.
+Common tools include llama.cpp's GBNF grammars, Outlines, and XGrammar, and vLLM and SGLang also have built-in structured output.
 
-受限解码保证了格式，但是不保证内容正确，而且过强的约束可能影响内容质量。
+Constrained decoding guarantees the format, but not the correctness of the content, and constraints that are too strong may hurt the quality of the content.
 
-## 推理时扩展
+## Test-time scaling
 
-传统上，提升模型能力的方法是训练更大的模型。**推理时扩展**（Test-time Scaling）提供了另一条路：
-**在推理时花更多的计算，换更好的答案**。
+Traditionally, the way to improve a model's capability was to train a bigger model. **Test-time scaling** offers another path: spend more compute at inference time to get better answers.
 
-* **思维链**（Chain-of-Thought）：让模型先写出推理过程，再给出答案。推理模型（比如 OpenAI o1、DeepSeek-R1、Qwen3 的思考模式）
-通过强化学习把这种能力内化，生成很长的思考过程；
-* **多次采样 + 投票**：对同一个问题采样多个答案，取出现次数最多的（自一致性）；
-* **Best-of-N**：采样 N 个答案，用奖励模型或者验证器选最好的；
-* **搜索**：用树搜索等方法，在推理的每一步探索多个分支；
-* **思考预算**：让用户控制思考的长度。Qwen3 和 DeepSeek-V4 都支持“思考 / 非思考”两种模式，以及对思考长度的控制。
+* **Chain-of-thought**: let the model write out its reasoning first and then give the answer. Reasoning models (such as OpenAI o1, DeepSeek-R1, and the thinking mode of Qwen3) internalize this ability
+  through reinforcement learning and generate very long thinking processes;
+* **Multiple samples with voting**: sample several answers to the same question and take the most frequent one (self-consistency);
+* **Best-of-N**: sample N answers and pick the best with a reward model or a verifier;
+* **Search**: use tree search and similar methods to explore multiple branches at each step of reasoning;
+* **Thinking budget**: let users control how much the model thinks. Qwen3 supports "thinking / non-thinking" modes and can limit the length of thinking. DeepSeek-V4 also has thinking and non-thinking
+  modes, and in thinking mode you can choose the reasoning effort (`reasoning_effort`).
 
-推理时扩展改变了推理系统的负载特征：思维链让每个请求的输出长度大幅增加，KV 缓存和解码吞吐成为更突出的瓶颈。
-这也是前面所有推理优化技术越来越重要的原因。
+Test-time scaling changes the load profile of inference systems: chains of thought greatly increase the output length of each request, so the KV cache and decode throughput become more prominent
+bottlenecks. This is also why all the inference optimizations above are becoming more and more important.
 
-## 推理引擎
+## Inference engines
 
-前面介绍的技术，被集成在各种**推理引擎**中，用户不需要从头实现：
+The techniques above are integrated into various **inference engines**, so users do not need to implement them from scratch:
 
-| 引擎 | 特点 |
-|---|---|
-| vLLM | 最广泛使用的开源引擎，PagedAttention、连续批处理、前缀缓存、投机解码、多种量化，生态最完整 |
-| SGLang | 强调 RadixAttention 前缀缓存和结构化输出，多轮对话、智能体场景表现突出 |
-| TensorRT-LLM | NVIDIA 官方引擎，针对自家 GPU 深度优化，峰值性能高，部署更复杂 |
-| llama.cpp | C/C++ 实现，支持 CPU、Apple 芯片和各类消费级设备，GGUF 格式的来源 |
-| Ollama、LM Studio | 在 llama.cpp 等引擎之上封装的本地运行工具，开箱即用 |
-| MLX | Apple 为自家芯片开发的数组框架，适合 Mac 上的推理和微调 |
-| NVIDIA Dynamo、llm-d | 位于引擎之上的多节点编排层，负责预填充和解码分离、KV 感知的路由、弹性伸缩 |
+| Engine               | Features                                                                                                                                                                                                           |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| vLLM                 | The most widely used open-source engine. PagedAttention, continuous batching, prefix caching, speculative decoding, many quantization schemes, and the most complete ecosystem                                     |
+| SGLang               | Emphasizes RadixAttention prefix caching and structured output, and stands out in multi-turn conversation and agent scenarios                                                                                      |
+| TensorRT-LLM         | NVIDIA's official engine, deeply optimized for its own GPUs. High peak performance, but more complex to deploy                                                                                                     |
+| llama.cpp            | A C/C++ implementation that supports CPUs, Apple silicon, and all kinds of consumer devices. The origin of the GGUF format                                                                                         |
+| Ollama, LM Studio    | Local tools built on top of llama.cpp and other engines, ready to use out of the box                                                                                                                               |
+| MLX                  | Apple's array framework for its own chips, suitable for inference and fine-tuning on a Mac                                                                                                                         |
+| NVIDIA Dynamo, llm-d | Multi-node orchestration layers on top of the engines, handling prefill-decode disaggregation and KV-aware routing. Dynamo can work with vLLM, SGLang, and TensorRT-LLM, and llm-d is built on vLLM and Kubernetes |
 
-Hugging Face 的 TGI 在 2025 年底进入维护模式，官方建议新部署使用 vLLM 或者 SGLang。
+Hugging Face's TGI has entered maintenance mode, and the official recommendation for new deployments is vLLM, SGLang, or local engines such as llama.cpp and MLX.
 
-选择的一般原则：在个人电脑上本地运行，选择 llama.cpp、Ollama 或 MLX；在 GPU 服务器上提供服务，选择 vLLM 或 SGLang；
-追求 NVIDIA 硬件上的极致性能，考虑 TensorRT-LLM。
+As a general rule: to run locally on a personal computer, choose llama.cpp, Ollama, or MLX; to serve on GPU servers, choose vLLM or SGLang; to get the highest performance on NVIDIA hardware, consider
+TensorRT-LLM.
 
 ---
 
-本章节，我们梳理了推理领域的主流技术：
+In this chapter, we surveyed the mainstream techniques in inference:
 
-* **少读数据**：量化、剪枝、GQA 和 MLA、KV 缓存压缩；
-* **少做重复**：KV 缓存、PagedAttention、前缀缓存；
-* **多做并行**：连续批处理、分块预填充、预填充和解码分离、投机解码；
-* **控制生成**：更多采样策略、受限解码；
-* **用算力换质量**：推理时扩展。
+* **Read less data**: quantization, pruning, GQA and MLA, KV cache compression;
+* **Do less repeated work**: KV cache, PagedAttention, prefix caching;
+* **Do more in parallel**: continuous batching, chunked prefill, prefill-decode disaggregation, speculative decoding;
+* **Control generation**: more sampling strategies, constrained decoding;
+* **Trade compute for quality**: test-time scaling.
 
-我们实现的 KV 缓存和批量推理，是这些技术的起点：缓存解决了重复计算，批处理提升了并行度。
-工业级的推理系统，是在这个基础上，围绕“显存带宽”这个核心瓶颈，一层一层优化出来的。
+The KV cache and batch inference we implemented are the starting point of these techniques: the cache removes repeated computation, and batching raises parallelism. Industrial inference systems are
+built on this foundation, optimized layer by layer around the core bottleneck of memory bandwidth.
+
+## References
+
+* Kwon et al., *Efficient Memory Management for Large Language Model Serving with PagedAttention*, 2023.
+* Dao et al., *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*, 2022.
+* Frantar et al., *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers*, 2022.
+* Lin et al., *AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration*, 2023.
+* Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, 2022.
+* Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, 2022.
+* OpenAI, *gpt-oss-120b & gpt-oss-20b Model Card*, 2025.
+* Frantar and Alistarh, *SparseGPT: Massive Language Models Can Be Accurately Pruned in One-Shot*, 2023.
+* Xiao et al., *Efficient Streaming Language Models with Attention Sinks*, 2023.
+* Zhang et al., *H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models*, 2023.
+* Li et al., *SnapKV: LLM Knows What You are Looking for Before Generation*, 2024.
+* Liu et al., *Lost in the Middle: How Language Models Use Long Contexts*, 2023.
+* Hsieh et al., *RULER: What's the Real Context Size of Your Long-Context Language Models?*, 2024.
+* Zheng et al., *SGLang: Efficient Execution of Structured Language Model Programs*, 2023.
+* Yu et al., *Orca: A Distributed Serving System for Transformer-Based Generative Models*, 2022.
+* Agrawal et al., *Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve*, 2024.
+* Zhong et al., *DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving*, 2024.
+* Leviathan et al., *Fast Inference from Transformers via Speculative Decoding*, 2022.
+* Cai et al., *Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads*, 2024.
+* Li et al., *EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty*, 2024.
+* Nie et al., *Large Language Diffusion Models*, 2025.
+* Nguyen et al., *Turning Up the Heat: Min-p Sampling for Creative and Coherent LLM Outputs*, 2024.
+* Dong et al., *XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models*, 2024.
+* Wang et al., *Self-Consistency Improves Chain of Thought Reasoning in Language Models*, 2022.
+* Snell et al., *Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters*, 2024.
+* He et al., *Defeating Nondeterminism in LLM Inference*, Thinking Machines Lab, 2025.
