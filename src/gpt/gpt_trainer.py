@@ -61,7 +61,7 @@ class LayerNorm(Layer):
             norm_mean = np.mean(grad * norm, axis=-1, keepdims=True)
             x.grad += (grad - grad_mean - norm * norm_mean) / np.sqrt(var + self.eps)
 
-        return p.attach(gradient_fn, {self.weight, self.bias, x})
+        return p.attach(gradient_fn, {x})
 
     @property
     def parameters(self):
