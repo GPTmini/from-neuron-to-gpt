@@ -12,9 +12,8 @@ class SFTLoss(Loss):
         flat_softmax = softmax.reshape(-1, softmax.shape[-1])
         flat_y = y.data.reshape(-1).astype(np.int64)
         flat_mask = mask.data.reshape(-1)
-
-        rows = np.arange(len(flat_y))
         n = max(np.sum(flat_mask), 1.0)
+        rows = np.arange(len(flat_y))
 
         log = np.log(np.clip(flat_softmax[rows, flat_y], 1e-10, 1))
         ce = Tensor(0 - np.sum(log * flat_mask) / n)

@@ -39,7 +39,7 @@ def gpt_train():
     optimizer = AdamWOptimizer(model.parameters, lr=GPT_LR)
     trainer = GPTTrainer(model, loss_fn, optimizer)
 
-    scheduler = WarmupCosineScheduler(GPT_LR, EPOCHS * len(dataset))
+    scheduler = WarmupCosineScheduler(GPT_LR, EPOCHS * len(dataset), 100, GPT_LR / 10)
     trainer.train(dataset, EPOCHS, scheduler, MODEL_FILE)
     return trainer, dataset
 

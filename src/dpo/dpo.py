@@ -19,26 +19,22 @@ DPO_MODEL = str(DATA_DIR / "tinyshakespeare-dpo.npz")
 DPO_LR = 0.000001
 
 
-def generate_rejected_batch(model, prompts, lens, pad_token=0, temperature=0.8, top_k=20):
-    sequences = [list(p) for p in prompts]
+def generate_rejected(model, prompt, length, temperature=0.8, top_k=20):
+    tokens = list(prompt)
 
     with Tensor.no_grad():
-        for _ in range(max(lens)):
-            windows = [(([pad_token] * CONTEXT_SIZE) + seq)[-CONTEXT_SIZE:] for seq in sequences]
-            batch = np.array(windows, dtype=np.int64)
-            logits = model(Tensor(batch))
-            next_logits = logits.data[:, -1, :] / temperature
+        for _ in range(length):
+            logits = model(Tensor([tokens[-CONTEXT_SIZE:]]))
+            last_logits = logits.data[0, -1] / temperature
 
-            k = min(top_k, next_logits.shape[-1])
-            for row in range(len(prompts)):
-                row_logits = next_logits[row]
-                threshold = np.partition(row_logits, -k)[-k]
-                row_logits = np.where(row_logits < threshold, -np.inf, row_logits)
-                probs = np.exp(row_logits - np.max(row_logits))
-                probs /= np.sum(probs)
-                sequences[row].append(int(np.random.choice(len(probs), p=probs)))
+            k = min(top_k, last_logits.size)
+            threshold = np.partition(last_logits, -k)[-k]
+            last_logits = np.where(last_logits < threshold, -np.inf, last_logits)
+            probs = np.exp(last_logits - np.max(last_logits))
+            probs /= np.sum(probs)
+            tokens.append(int(np.random.choice(len(probs), p=probs)))
 
-    return [seq[len(prompts[i]): len(prompts[i]) + lens[i]] for i, seq in enumerate(sequences)]
+    return tokens[len(prompt):]
 
 
 def dpo_sample():
@@ -54,21 +50,16 @@ def dpo_sample():
     pairs = pairs[:512]
 
     samples = []
-    for start in range(0, len(pairs), 64):
-        chunk = pairs[start: start + 64]
+    for i, ((speaker_a, content_a), (speaker_b, content_b)) in enumerate(pairs):
+        prompt = dataset.encode(f"{speaker_a}:\n{content_a}\n\n")
+        chosen = dataset.encode(f"{speaker_b}:\n{content_b}\n\n")
+        rejected = generate_rejected(model, prompt, len(chosen))
 
-        prompt_tokens = [dataset.encode(f"{a}:\n{t}\n") for (a, t), (_, _) in chunk]
-        chosen_tokens = [dataset.encode(f"{b}:\n{t}\n") for (_, _), (b, t) in chunk]
+        if rejected != chosen:
+            samples.append((prompt, chosen, rejected))
 
-        lens = [len(c) for c in chosen_tokens]
-        rejected_tokens = generate_rejected_batch(model, prompt_tokens, lens)
-
-        for p, c, r in zip(prompt_tokens, chosen_tokens, rejected_tokens):
-            if len(r) == 0 or r == c:
-                continue
-            samples.append((p, c, r))
-
-        print(f"generated {len(samples)}/{len(pairs)} DPO samples")
+        if (i + 1) % 64 == 0:
+            print(f"generated {len(samples)}/{len(pairs)} DPO samples")
 
     with open(DPO_SAMPLES, "wb") as f:
         pickle.dump(samples, f)
@@ -89,7 +80,7 @@ def dpo_train():
     trainer.load_reference(SFT_MODEL)
 
     dpo_dataset = DPODataset(DPO_SAMPLES, CONTEXT_SIZE)
-    scheduler = WarmupCosineScheduler(DPO_LR, len(dpo_dataset))
+    scheduler = WarmupCosineScheduler(DPO_LR, len(dpo_dataset), 50, DPO_LR / 10)
     trainer.train(dpo_dataset, 1, scheduler, DPO_MODEL)
     return trainer, dataset
 

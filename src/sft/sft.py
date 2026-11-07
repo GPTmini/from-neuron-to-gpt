@@ -37,11 +37,20 @@ def extract_turns(filename, split=0.9, max_turn_chars=100):
             continue
 
         speaker = m.group(1).strip()
-        content = " ".join(line.strip() for line in lines[1:] if line.strip())
-        if not content:
+        content_lines = []
+        length = 0
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            if length + len(line) + 1 > max_turn_chars:
+                break
+            content_lines.append(line)
+            length += len(line) + 1
+        if not content_lines:
             continue
 
-        turns.append((speaker, content[:max_turn_chars]))
+        turns.append((speaker, "\n".join(content_lines)))
 
     return turns
 
@@ -55,8 +64,8 @@ def sft_sample():
 
     samples = []
     for (speaker_a, content_a), (speaker_b, content_b) in pairs:
-        prompt = f"{speaker_a}:\n{content_a}\n"
-        response = f"{speaker_b}:\n{content_b}\n"
+        prompt = f"{speaker_a}:\n{content_a}\n\n"
+        response = f"{speaker_b}:\n{content_b}\n\n"
         samples.append((dataset.encode(prompt), dataset.encode(response)))
 
     with open(SFT_SAMPLES, "wb") as f:
@@ -76,7 +85,7 @@ def sft_train():
     trainer.load(MODEL_FILE)
 
     sft_dataset = SFTDataset(SFT_SAMPLES, CONTEXT_SIZE)
-    scheduler = WarmupCosineScheduler(SFT_LR, len(sft_dataset))
+    scheduler = WarmupCosineScheduler(SFT_LR, len(sft_dataset), 50, SFT_LR / 10)
     trainer.train(sft_dataset, 1, scheduler, SFT_MODEL)
     return trainer, dataset
 
