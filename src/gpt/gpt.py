@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-import requests
 
 from src.core import AdamWOptimizer, WarmupCosineScheduler
 from src.gpt import CharDataset, GPT, GPTTrainer, GPTLoss
@@ -23,6 +22,8 @@ GPT_LR = 0.001
 
 
 def download_file():
+    import requests
+
     file = Path(DATA_FILE)
     if not file.exists():
         file.parent.mkdir(parents=True, exist_ok=True)

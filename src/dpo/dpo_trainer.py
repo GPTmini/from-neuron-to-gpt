@@ -69,7 +69,7 @@ class DPOTrainer(GPTTrainer):
             grad *= mask[..., None]
             x.grad += p.grad[:, None, None] * grad
 
-        return p.attach(gradient_fn, {x})
+        return p.attach(gradient_fn, [x])
 
     def load_reference(self, filename):
         if os.path.isfile(filename):

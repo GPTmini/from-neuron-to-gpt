@@ -20,4 +20,4 @@ class DPOLoss(Loss):
             pc.grad += common
             pr.grad += -common
 
-        return e.attach(gradient_fn, parents={pc, pr})
+        return e.attach(gradient_fn, parents=[pc, pr])

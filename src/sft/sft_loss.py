@@ -24,4 +24,4 @@ class SFTLoss(Loss):
             flat_grad *= flat_mask[:, None]
             p.grad += ce.grad * flat_grad.reshape(softmax.shape) / n
 
-        return ce.attach(gradient_fn, parents={p})
+        return ce.attach(gradient_fn, parents=[p])

@@ -22,4 +22,4 @@ class GPTLoss(Loss):
             flat_grad[rows, flat_y] -= 1
             p.grad += ce.grad * flat_grad.reshape(softmax.shape) / n
 
-        return ce.attach(gradient_fn, parents={p})
+        return ce.attach(gradient_fn, parents=[p])

@@ -47,7 +47,7 @@ class Linear(Layer):
             self.bias.grad += np.sum(grad, axis=0)
             x.grad += p.grad @ self.weight.data
 
-        return p.attach(gradient_fn, {x})
+        return p.attach(gradient_fn, [x])
 
     @property
     def parameters(self):
@@ -95,7 +95,7 @@ class Embedding(Layer):
         def gradient_fn():
             np.add.at(self.weight.grad, x.data.astype(np.int64), p.grad)
 
-        return p.attach(gradient_fn, parents={self.weight})
+        return p.attach(gradient_fn, parents=[self.weight])
 
     @property
     def parameters(self):
@@ -110,4 +110,4 @@ class MeanPool(Layer):
         def gradient_fn():
             x.grad += p.grad[:, None, :] / x.data.shape[1]
 
-        return p.attach(gradient_fn, parents={x})
+        return p.attach(gradient_fn, parents=[x])

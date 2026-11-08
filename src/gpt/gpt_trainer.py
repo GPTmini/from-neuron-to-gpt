@@ -19,7 +19,7 @@ class GELU(Layer):
             grad = 0.5 * (1.0 + tanh) + 0.5 * x.data * (1.0 - tanh ** 2) * self.c * (1.0 + 3.0 * 0.044715 * x.data ** 2)
             x.grad += a.grad * grad
 
-        return a.attach(gradient_fn, parents={x})
+        return a.attach(gradient_fn, parents=[x])
 
 
 class Tril(Layer):
@@ -35,7 +35,7 @@ class Tril(Layer):
         def gradient_fn():
             x.grad += p.grad * keep
 
-        return p.attach(gradient_fn, {x})
+        return p.attach(gradient_fn, [x])
 
 
 class LayerNorm(Layer):
@@ -61,7 +61,7 @@ class LayerNorm(Layer):
             norm_mean = np.mean(grad * norm, axis=-1, keepdims=True)
             x.grad += (grad - grad_mean - norm * norm_mean) / np.sqrt(var + self.eps)
 
-        return p.attach(gradient_fn, {x})
+        return p.attach(gradient_fn, [x])
 
     @property
     def parameters(self):
@@ -85,7 +85,7 @@ class Dropout(Layer):
         def gradient_fn():
             x.grad += p.grad * mask
 
-        return p.attach(gradient_fn, {x})
+        return p.attach(gradient_fn, [x])
 
 
 class GPTEmbedding(Composite):

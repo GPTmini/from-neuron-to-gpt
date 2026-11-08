@@ -23,7 +23,7 @@ class MSELoss(Loss):
         def gradient_fn():
             p.grad += mse.grad * (-2 * (y.data - p.data) / y.data.size)
 
-        return mse.attach(gradient_fn, parents={p})
+        return mse.attach(gradient_fn, parents=[p])
 
 
 class CELoss(Loss):
@@ -46,7 +46,7 @@ class CELoss(Loss):
             grad = (softmax - labels) / labels.shape[0]
             p.grad += ce.grad * grad
 
-        return ce.attach(gradient_fn, parents={p})
+        return ce.attach(gradient_fn, parents=[p])
 
 
 class BCELoss(Loss):
@@ -59,4 +59,4 @@ class BCELoss(Loss):
             grad = (clipped - y.data) / (clipped * (1 - clipped)) / y.data.size
             p.grad += bce.grad * grad
 
-        return bce.attach(gradient_fn, parents={p})
+        return bce.attach(gradient_fn, parents=[p])

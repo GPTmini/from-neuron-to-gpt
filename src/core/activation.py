@@ -12,7 +12,7 @@ class ReLU(Layer):
         def gradient_fn():
             x.grad += a.grad * (a.data > 0)
 
-        return a.attach(gradient_fn, parents={x})
+        return a.attach(gradient_fn, parents=[x])
 
 
 class Tanh(Layer):
@@ -23,7 +23,7 @@ class Tanh(Layer):
         def gradient_fn():
             x.grad += a.grad * (1 - a.data ** 2)
 
-        return a.attach(gradient_fn, parents={x})
+        return a.attach(gradient_fn, parents=[x])
 
 
 class Sigmoid(Layer):
@@ -39,7 +39,7 @@ class Sigmoid(Layer):
         def gradient_fn():
             x.grad += a.grad * a.data * (1 - a.data)
 
-        return a.attach(gradient_fn, parents={x})
+        return a.attach(gradient_fn, parents=[x])
 
 
 class Softmax(Layer):
@@ -56,4 +56,4 @@ class Softmax(Layer):
             grad = np.sum(a.data * a.grad, axis=self.axis, keepdims=True)
             x.grad += a.data * (a.grad - grad)
 
-        return a.attach(gradient_fn, parents={x})
+        return a.attach(gradient_fn, parents=[x])
