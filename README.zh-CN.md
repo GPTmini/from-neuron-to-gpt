@@ -1,7 +1,14 @@
-[![English](https://img.shields.io/badge/English-blue?style=for-the-badge)](README.md)
-[![中文](https://img.shields.io/badge/中文-red?style=for-the-badge)](README.zh-CN.md)
+[![English](https://img.shields.io/badge/English-blue)](README.md)
+[![中文](https://img.shields.io/badge/中文-red)](README.zh-CN.md)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gptmini/from-neuron-to-gpt/blob/main/tutorial/zh/artificial-neural-network/01-multilayer-perceptron/01-linear-regression.ipynb)
+[![GitHub stars](https://img.shields.io/github/stars/gptmini/from-neuron-to-gpt)](https://github.com/gptmini/from-neuron-to-gpt/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![从零开始大模型](banner.png)
+
+# 从零开始大模型
+
+**📖 在线阅读电子书：[gptmini.github.io/from-neuron-to-gpt](https://gptmini.github.io/from-neuron-to-gpt) —— 中文版与 English 版。**
 
 一套从单个神经元出发，只用 NumPy 一步步手搓出 GPT 的教程，提供中文版和英文版。
 
@@ -132,9 +139,9 @@ python -m src.dpo.dpo   # 直接偏好优化：准备 DPO 样本、训练、生�
 ├── tutorial/
 │   ├── zh/                     # 中文教程（Jupyter Notebook）
 │   │   ├── artificial-neural-network/
-│   │   └── large-language-model/
+│   │   ├── large-language-model/
+│   │   └── myst.yml            # 教程站点（MyST / Jupyter Book）配置
 │   └── en/                     # 英文教程，目录结构与 zh 相同
-├── myst.yml                    # 教程站点（MyST / Jupyter Book）配置
 ├── requirements.txt
 └── LICENSE
 ```
@@ -150,3 +157,7 @@ python -m src.dpo.dpo   # 直接偏好优化：准备 DPO 样本、训练、生�
 * Kingma 和 Ba，*Adam: A Method for Stochastic Optimization*，2014。
 * Loshchilov 和 Hutter，*Decoupled Weight Decay Regularization*（AdamW），2017。
 * Rafailov 等，*Direct Preference Optimization: Your Language Model is Secretly a Reward Model*，2023。
+
+---
+
+觉得这本教程有用，欢迎点个 ⭐，让更多人找到它。

@@ -1,7 +1,14 @@
-[![English](https://img.shields.io/badge/English-blue?style=for-the-badge)](README.md)
-[![中文](https://img.shields.io/badge/中文-red?style=for-the-badge)](README.zh-CN.md)
+[![English](https://img.shields.io/badge/English-blue)](README.md)
+[![中文](https://img.shields.io/badge/中文-red)](README.zh-CN.md)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gptmini/from-neuron-to-gpt/blob/main/tutorial/zh/artificial-neural-network/01-multilayer-perceptron/01-linear-regression.ipynb)
+[![GitHub stars](https://img.shields.io/github/stars/gptmini/from-neuron-to-gpt)](https://github.com/gptmini/from-neuron-to-gpt/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![From Neuron to GPT](banner.png)
+
+# From Neuron to GPT
+
+**📖 Read the book online: [gptmini.github.io/from-neuron-to-gpt](https://gptmini.github.io/from-neuron-to-gpt) — in English and 中文.**
 
 A tutorial that starts from a single neuron and builds a GPT by hand, step by step, using nothing but NumPy. It is available in Chinese and English.
 
@@ -132,9 +139,9 @@ Running time depends on the CPU, the number of cores, and the BLAS library that 
 ├── tutorial/
 │   ├── en/                     # English tutorial (Jupyter Notebooks)
 │   │   ├── artificial-neural-network/
-│   │   └── large-language-model/
+│   │   ├── large-language-model/
+│   │   └── myst.yml            # 教程站点（MyST / Jupyter Book）配置
 │   └── zh/                     # Chinese tutorial, same structure as en
-├── myst.yml                    # Site configuration (MyST / Jupyter Book)
 ├── requirements.txt
 └── LICENSE
 ```
@@ -150,3 +157,7 @@ Main references:
 * Kingma and Ba, *Adam: A Method for Stochastic Optimization*, 2014.
 * Loshchilov and Hutter, *Decoupled Weight Decay Regularization* (AdamW), 2017.
 * Rafailov et al., *Direct Preference Optimization: Your Language Model is Secretly a Reward Model*, 2023.
+
+---
+
+If this tutorial helps you, a ⭐ on the repo helps others find it.
