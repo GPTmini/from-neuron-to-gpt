@@ -69,7 +69,7 @@ pip install jupyterlab
 
 ### 运行教程
 
-在项目根目录运行 `jupyter lab`，然后按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版）下的 Notebook 即可。如果提示找不到 `src` 模块，请参考本页末尾的“常见问题”。
+在项目根目录运行 `jupyter lab`，然后按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版）下的 Notebook 即可。
 
 ### 用命令行运行完整流程
 
@@ -131,9 +131,9 @@ python -m src.dpo.dpo   # 直接偏好优化：准备 DPO 样本、训练、生�
 ├── tutorial/
 │   ├── zh/                     # 中文教程（Jupyter Notebook）
 │   │   ├── artificial-neural-network/
-│   │   └── large-language-model/
+│   │   ├── large-language-model/
+│   │   └── myst.yml            # 教程站点（MyST / Jupyter Book）配置
 │   └── en/                     # 英文教程，目录结构与 zh 相同
-├── myst.yml                    # 教程站点（MyST / Jupyter Book）配置
 ├── requirements.txt
 └── LICENSE
 ```

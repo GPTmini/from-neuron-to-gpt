@@ -69,7 +69,7 @@ The tutorial uses tinyshakespeare, a collection of Shakespeare's plays, as train
 
 ### Running the tutorial
 
-Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order. If Python cannot find the `src` module, see the FAQ at the end of this page.
+Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order.
 
 ### Running the full pipeline from the command line
 
@@ -131,9 +131,9 @@ Running time depends on the CPU, the number of cores, and the BLAS library that 
 ├── tutorial/
 │   ├── en/                     # English tutorial (Jupyter Notebooks)
 │   │   ├── artificial-neural-network/
-│   │   └── large-language-model/
+│   │   ├── large-language-model/
+│   │   └── myst.yml            # 教程站点（MyST / Jupyter Book）配置
 │   └── zh/                     # Chinese tutorial, same structure as en
-├── myst.yml                    # Site configuration (MyST / Jupyter Book)
 ├── requirements.txt
 └── LICENSE
 ```
