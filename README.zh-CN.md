@@ -77,7 +77,7 @@ pip install jupyterlab
 
 ### 运行教程
 
-在项目根目录运行 `jupyter lab`，然后按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版）下的 Notebook 即可。如果提示找不到 `src` 模块，请参考本页末尾的“常见问题”。
+在项目根目录运行 `jupyter lab`，然后按编号顺序打开 `tutorial/zh`（中文版）或者 `tutorial/en`（英文版）下的 Notebook 即可。
 
 ### 用命令行运行完整流程
 

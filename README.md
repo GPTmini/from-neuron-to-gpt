@@ -77,7 +77,7 @@ The tutorial uses tinyshakespeare, a collection of Shakespeare's plays, as train
 
 ### Running the tutorial
 
-Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order. If Python cannot find the `src` module, see the FAQ at the end of this page.
+Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order.
 
 ### Running the full pipeline from the command line
 
