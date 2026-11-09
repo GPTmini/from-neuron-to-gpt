@@ -51,7 +51,7 @@ project:
             - file: large-language-model/03-pre-training/07-shortcut-connect.ipynb
             - file: large-language-model/03-pre-training/08-normalize.ipynb
             - file: large-language-model/03-pre-training/09-dropout.ipynb
-            - file: large-language-model/03-pre-training/10-persistance.ipynb
+            - file: large-language-model/03-pre-training/10-persistence.ipynb
         - file: large-language-model/03-pre-training/pre-training-survey.md
         - title: Inference
           children:
