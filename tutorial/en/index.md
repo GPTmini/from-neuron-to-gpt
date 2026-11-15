@@ -112,7 +112,7 @@ The chapters before `03-pre-training/10` use smaller configurations so that they
 
 All the code was developed on a Mac mini M4 with 16 GB of memory and runs entirely on the CPU.
 
-* Pre-training (default configuration): about 1 to 2 hours;
+* Pre-training (default configuration): about 1 hour;
 * In fine-tuning, DPO data preparation generates the rejected samples one by one, which is also slow.
 
 Running time depends on the CPU, and it can differ greatly between machines.
