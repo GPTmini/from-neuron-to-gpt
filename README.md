@@ -12,7 +12,7 @@
 
 A tutorial that starts from a single neuron and builds a GPT by hand, step by step, using nothing but NumPy. It is available in Chinese and English.
 
-It uses no deep learning framework such as PyTorch or TensorFlow. Automatic differentiation, network layers, optimizers, attention, the Transformer, training, inference, and fine-tuning are all implemented from scratch, and each is explained step by step in a Jupyter Notebook.
+It uses no deep learning framework such as PyTorch or TensorFlow. Autograd, multi-layers, optimizers, attention, transformer, pre-training, inference, and fine-tuning are all implemented from scratch, and each is explained step by step in a Jupyter Notebook.
 
 * Code repository: [gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
 * License: [MIT License](LICENSE)
@@ -21,34 +21,34 @@ It uses no deep learning framework such as PyTorch or TensorFlow. Automatic diff
 
 * **No framework dependencies**: only NumPy. We start from tensors, computational graphs, and backpropagation, so you can understand every line of code;
 * **Step by step**: from a single neuron to GPT, supervised fine-tuning (SFT), and direct preference optimization (DPO), with only a few new concepts per chapter;
-* **Explanations alongside code**: each chapter is a self-contained, runnable notebook, and most chapters end with exercises;
+* **Explanations alongside code**: each chapter is a self-contained, runnable notebook;
 * **CPU only**: no GPU required. The default GPT model has about 10.8M parameters and can be trained on a laptop.
 
 ## Table of contents
 
-The tutorial has two parts with 34 chapters in total, plus one framework summary. **Chapter numbers in the two parts are independent**: Part 1 uses 01–16 and Part 2 uses 01–18.
+The tutorial has two parts with 34 chapters in total, plus one framework summary.
 
 ### Part 1: Neural network fundamentals
 
-Directory: `artificial-neural-network`, under `tutorial/zh` (Chinese) and `tutorial/en` (English).
+Directory: `tutorial/en/artificial-neural-network`
 
-| Directory                     | Chapters | Contents                                                                                                                                         |
-|-------------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| `01-multilayer-perceptron`    | 01–10    | Linear regression, loss function, gradient descent, automatic differentiation, learning rate, iteration, batch, epoch, hidden layer, activation function |
-| `02-recurrent-neural-network` | 11–16    | Encoding, embedding, cross-entropy loss, recurrent neural network, Adam optimizer, learning rate scheduler                                       |
-| `03-core-framework`           | Summary  | Consolidates the previous 16 chapters into a complete core deep learning framework (`src/core`)                                                  |
+| Directory                     | Chapters | Contents                                                                                                                                |
+|-------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| `01-multilayer-perceptron`    | 01–10    | Linear regression, loss function, gradient descent, autograd, learning rate, iteration, batch, epoch, hidden layer, activation function |
+| `02-recurrent-neural-network` | 11–16    | Encoding, embedding, cross-entropy loss, recurrent neural network, Adam optimizer, learning rate scheduler                              |
+| `03-core-framework`           | Summary  | Consolidates the previous 16 chapters into a complete core deep learning framework (`src/core`)                                         |
 
 ### Part 2: Large language model fundamentals
 
-Directory: `large-language-model`, under `tutorial/zh` (Chinese) and `tutorial/en` (English).
+Directory: `tutorial/en/large-language-model`
 
-| Directory         | Chapters | Contents                                                                                    |
-|-------------------|----------|---------------------------------------------------------------------------------------------|
-| `01-tokenizer`    | 01–02    | Token embedding, position embedding                                                         |
-| `02-attention`    | 03–06    | Self-attention, causal attention, weighted attention, multi-head attention                  |
-| `03-pre-training` | 07–10    | Residual connection, normalization, dropout, model persistence                              |
+| Directory         | Chapters | Contents                                                                                 |
+|-------------------|----------|------------------------------------------------------------------------------------------|
+| `01-tokenizer`    | 01–02    | Token embedding, position embedding                                                      |
+| `02-attention`    | 03–06    | Self-attention, causal attention, weighted attention, multi-head attention               |
+| `03-pre-training` | 07–10    | Residual connection, normalization, dropout, model persistence                           |
 | `04-inference`    | 11–14    | Sampling strategies (temperature, top-k, top-p), stopping criteria, KV cache, batch inference |
-| `05-fine-tuning`  | 15–18    | SFT data preparation and training, DPO data preparation and training                        |
+| `05-fine-tuning`  | 15–18    | SFT, DPO                       |
 
 ## Quick start
 
@@ -77,7 +77,7 @@ The tutorial uses tinyshakespeare, a collection of Shakespeare's plays, as train
 
 ### Running the tutorial
 
-Run `jupyter lab` from the project root, then open the notebooks under `tutorial/zh` (Chinese) or `tutorial/en` (English) in numerical order.
+Run `jupyter lab` from the project root, then open the notebooks under `tutorial/en` in numerical order.
 
 ### Running the full pipeline from the command line
 
@@ -120,10 +120,10 @@ The chapters before `03-pre-training/10` use smaller configurations so that they
 
 All the code was developed on a Mac mini M4 with 16 GB of memory and runs entirely on the CPU.
 
-* Pre-training (default configuration): about 1 to 2 hours;
-* In fine-tuning, DPO data preparation generates the rejected samples one by one, which is usually the slowest step.
+* Pre-training (default configuration): about 1 hour;
+* In fine-tuning, DPO data preparation generates the rejected samples one by one, which is also slow.
 
-Running time depends on the CPU, the number of cores, and the BLAS library that NumPy is linked against, and it can differ greatly between machines.
+Running time depends on the CPU, and it can differ greatly between machines.
 
 ## Project structure
 
@@ -132,7 +132,7 @@ Running time depends on the CPU, the number of cores, and the BLAS library that 
 ├── data/                       # Training data (tinyshakespeare) plus the model parameters and samples produced by training
 ├── src/
 │   ├── core/                   # Core framework: tensors, layers, activation functions, loss functions, optimizers,
-│   │                           #         learning rate schedulers, datasets, trainers
+│   │                           #                 learning rate schedulers, datasets, trainers
 │   ├── gpt/                    # GPT model, dataset, loss function, trainer; gpt.py is the pre-training script
 │   ├── sft/                    # Supervised fine-tuning; sft.py is the fine-tuning script
 │   └── dpo/                    # Direct preference optimization; dpo.py is the optimization script
@@ -140,7 +140,7 @@ Running time depends on the CPU, the number of cores, and the BLAS library that 
 │   ├── en/                     # English tutorial (Jupyter Notebooks)
 │   │   ├── artificial-neural-network/
 │   │   ├── large-language-model/
-│   │   └── myst.yml            # 教程站点（MyST / Jupyter Book）配置
+│   │   └── myst.yml            # Tutorial site（MyST / Jupyter Book）configuration
 │   └── zh/                     # Chinese tutorial, same structure as en
 ├── requirements.txt
 └── LICENSE
