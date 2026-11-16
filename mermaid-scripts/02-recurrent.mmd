@@ -14,7 +14,7 @@ flowchart LR
         Input
     end
     
-    Ht((h)):::test -.-> Hidden[[hidden]]:::data --> C{+}:::data --> Tanh[tanh]:::data --> Ht1((h)):::test
+    Ht((h)):::test -.-> Hidden[[hidden]]:::data --> C{+}:::data --> Tanh[tanh]:::data --> Ht1((h')):::test
     Xt((x)):::in --> Embedding[embedding]:::model --> Input[[input]]:::data --> C
-    Tanh --> Output[[output]]:::model --> Softmax[softmax]:::model --> Pt1((p)):::out
+    Tanh --> Output[[output]]:::model --> Softmax[softmax]:::model --> Pt1((p')):::out
     
