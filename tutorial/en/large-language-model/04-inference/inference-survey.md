@@ -8,7 +8,7 @@ billions of parameters, and every step of inference has been heavily optimized.
 
 In this chapter, we survey the mainstream techniques in model inference.
 
-> LLM technology evolves quickly. The content of this chapter is current as of November 2026.
+> LLM technology evolves quickly. The content of this chapter is current as of November 2026. This chapter was generated with the help of AI.
 
 ## Why inference is slow
 

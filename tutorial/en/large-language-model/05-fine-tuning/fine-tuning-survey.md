@@ -7,7 +7,7 @@ But industrial post-training is far more complex: larger-scale instruction data,
 breakthrough of the past two years: training reasoning models that "think" with verifiable rewards. In this chapter, we survey the mainstream techniques in fine-tuning and build a complete map of the
 field.
 
-> LLM technology evolves quickly. The content of this chapter is current as of November 2026.
+> LLM technology evolves quickly. The content of this chapter is current as of November 2026. This chapter was generated with the help of AI.
 
 ## Overview of fine-tuning techniques
 

@@ -12,7 +12,7 @@ DeepSeek, Gemma, and others), almost every part has changed a great deal, from t
 These new architectures are hard to demonstrate with small code and small data. In this chapter we survey the cutting-edge techniques of the pre-training stage and draw a complete technology map.
 Interested readers can dig deeper from here.
 
-> Large model technology evolves quickly; the content of this chapter is current as of November 2026.
+> Large model technology evolves quickly; the content of this chapter is current as of November 2026. This chapter was generated with the help of AI.
 
 ## Technology comparison
 
