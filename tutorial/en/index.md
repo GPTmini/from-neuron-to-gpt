@@ -2,9 +2,9 @@
 
 ![From Neuron to GPT](banner.png)
 
-A tutorial that starts from a single neuron and builds a GPT by hand, step by step, using nothing but NumPy. It is available in Chinese and English.
+A tutorial that starts from a single neuron and guides you step by step building a GPT model from scratch using only NumPy. It is available in both Chinese and English.
 
-It uses no deep learning framework such as PyTorch or TensorFlow. Autograd, multi-layers, optimizers, attention, transformer, pre-training, inference, and fine-tuning are all implemented from scratch, and each is explained step by step in a Jupyter Notebook.
+It does not use deep learning frameworks such as PyTorch or TensorFlow. Autograd, multi-layers, optimizers, attention, transformer, pre-training, inference, and fine-tuning are all implemented from scratch and explained in detail, step by step, in a Jupyter Notebook.
 
 * Code repository: [gptmini/from-neuron-to-gpt](https://github.com/gptmini/from-neuron-to-gpt)
 * License: [MIT License](https://github.com/gptmini/from-neuron-to-gpt/blob/main/LICENSE)
